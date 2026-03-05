@@ -305,40 +305,40 @@ qiime diversity alpha-rarefaction \
 
 # Use zero-filtered ASVs to Collapse taxonomic assignment with feature table
 # NOTE: family is 5, genus is 6, and species is 7
-mkdir ASVs/zerofilteredOTU/taxtable_species_10k
-mkdir ASVs/zerofilteredOTU/taxtable_genus_10k
-mkdir ASVs/zerofilteredOTU/taxtable_family_10k
+mkdir ASVs/zerofilteredOTU/taxtable_species
+mkdir ASVs/zerofilteredOTU/taxtable_genus
+mkdir ASVs/zerofilteredOTU/taxtable_family
 
 qiime taxa collapse \
 --i-table ASVs/zerofilteredOTU/filtered-table_zerofiltered.qza \
 --i-taxonomy taxonomy_greengenes_deblur.qza \
 --p-level 5 \
---o-collapsed-table ASVs/zerofilteredOTU/taxtable_family_10k/family_table-deblur.qza 
+--o-collapsed-table ASVs/zerofilteredOTU/taxtable_family/family_table-deblur.qza 
 
 qiime taxa collapse \
   --i-table ASVs/zerofilteredOTU/filtered-table_zerofiltered.qza \
   --i-taxonomy taxonomy_greengenes_deblur.qza \
   --p-level 6 \
-  --o-collapsed-table ASVs/zerofilteredOTU/taxtable_genus_10k/genus_table-deblur.qza 
+  --o-collapsed-table ASVs/zerofilteredOTU/taxtable_genus/genus_table-deblur.qza 
 
 qiime taxa collapse \
   --i-table ASVs/zerofilteredOTU/filtered-table_zerofiltered.qza \
   --i-taxonomy taxonomy_greengenes_deblur.qza \
   --p-level 7 \
-  --o-collapsed-table ASVs/zerofilteredOTU/taxtable_species_10k/species_table-deblur.qza
+  --o-collapsed-table ASVs/zerofilteredOTU/taxtable_species/species_table-deblur.qza
 
 #export qiime taxonomy table to biom table to txt
 qiime tools export \
-  --input-path ASVs/zerofilteredOTU/taxtable_species_10k/species_table-deblur.qza \
-  --output-path ASVs/zerofilteredOTU/biom_table_species_10k
-biom convert -i ASVs/zerofilteredOTU/biom_table_species_10k/feature-table.biom -o ASVs/zerofilteredOTU/biom_table_species_10k/species_table_from_biom.tsv --to-tsv
+  --input-path ASVs/zerofilteredOTU/taxtable_species/species_table-deblur.qza \
+  --output-path ASVs/zerofilteredOTU/biom_table_species
+biom convert -i ASVs/zerofilteredOTU/biom_table_species/feature-table.biom -o ASVs/zerofilteredOTU/biom_table_species/species_table_from_biom.tsv --to-tsv
 
 # to view
 # cat biom_table_species/species_table_from_biom.tsv
 qiime tools export \
   --input-path ASVs/zerofilteredOTU/taxtable_genus/genus_table-deblur.qza \
-  --output-path ASVs/zerofilteredOTU/biom_table_genus_10k
-biom convert -i ASVs/zerofilteredOTU/biom_table_genus_10k/feature-table.biom -o ASVs/zerofilteredOTU/biom_table_genus_10k/genus_table_from_biom.tsv --to-tsv 
+  --output-path ASVs/zerofilteredOTU/biom_table_genus
+biom convert -i ASVs/zerofilteredOTU/biom_table_genus/feature-table.biom -o ASVs/zerofilteredOTU/biom_table_genus/genus_table_from_biom.tsv --to-tsv 
 
 
 
@@ -354,13 +354,13 @@ biom convert -i ASVs/zerofilteredOTU/biom_table_genus_10k/feature-table.biom -o 
 
 qiime tools export \
   --input-path ASVs/zerofilteredOTU/taxtable_family/family_table-deblur.qza \
-  --output-path ASVs/zerofilteredOTU/biom_table_family_10k
-biom convert -i ASVs/zerofilteredOTU/biom_table_family_10k/feature-table.biom -o ASVs/zerofilteredOTU/biom_table_family_10k/family_table_from_biom.tsv --to-tsv
+  --output-path ASVs/zerofilteredOTU/biom_table_family
+biom convert -i ASVs/zerofilteredOTU/biom_table_family/feature-table.biom -o ASVs/zerofilteredOTU/biom_table_family/family_table_from_biom.tsv --to-tsv
 
 # to view
 # cat biom_table_family/family_table_from_biom.tsv
 mkdir diversity
-mkdir diversity/zero-filtered_10k
+mkdir diversity/zero-filtered
 
 #zero-filtered -- rarefy at 6265
 #diversity analysis change rarefaction depth
@@ -369,31 +369,31 @@ qiime diversity core-metrics-phylogenetic \
   --i-table ASVs/zerofilteredOTU/filtered-table_zerofiltered.qza \
   --p-sampling-depth 6265 \
   --m-metadata-file metadata-fruit-2.tsv \
-  --output-dir diversity/zero-filtered_10k/core-metrics-results
+  --output-dir diversity/zero-filtered/core-metrics-results
 # based on the sequencing depth and distribution of samples, use 6265 sequences/sample
 
 #export diversity metrics as tables (RUN ONE BY ONE)
 #rename the files after each export -- it doesn't let us name it when exporting
 qiime tools export \
-  --input-path diversity/zero-filtered_10k/core-metrics-results/evenness_vector.qza \
-  --output-path diversity/zero-filtered_10k/exported-core-metrics-tables
+  --input-path diversity/zero-filtered/core-metrics-results/evenness_vector.qza \
+  --output-path diversity/zero-filtered/exported-core-metrics-tables
 
 qiime tools export \
-  --input-path diversity/zero-filtered_10k/core-metrics-results/faith_pd_vector.qza \
-  --output-path diversity/zero-filtered_10k/exported-core-metrics-tables
+  --input-path diversity/zero-filtered/core-metrics-results/faith_pd_vector.qza \
+  --output-path diversity/zero-filtered/exported-core-metrics-tables
 
 qiime tools export \
-  --input-path diversity/zero-filtered_10k/core-metrics-results/observed_features_vector.qza \
-  --output-path diversity/zero-filtered_10k/exported-core-metrics-tables
+  --input-path diversity/zero-filtered/core-metrics-results/observed_features_vector.qza \
+  --output-path diversity/zero-filtered/exported-core-metrics-tables
 
 qiime tools export \
-  --input-path diversity/zero-filtered_10k/core-metrics-results/shannon_vector.qza \
-  --output-path diversity/zero-filtered_10k/exported-core-metrics-tables
+  --input-path diversity/zero-filtered/core-metrics-results/shannon_vector.qza \
+  --output-path diversity/zero-filtered/exported-core-metrics-tables
 
 qiime tools export \
-  --input-path diversity/zero-filtered_10k/core-metrics-results/unweighted_unifrac_distance_matrix.qza \
-  --output-path diversity/zero-filtered_10k/exported-core-metrics-tables
+  --input-path diversity/zero-filtered/core-metrics-results/unweighted_unifrac_distance_matrix.qza \
+  --output-path diversity/zero-filtered/exported-core-metrics-tables
 
 qiime tools export \
-  --input-path diversity/zero-filtered_10k/core-metrics-results/weighted_unifrac_distance_matrix.qza \
-  --output-path diversity/zero-filtered_10k/exported-core-metrics-tables
+  --input-path diversity/zero-filtered/core-metrics-results/weighted_unifrac_distance_matrix.qza \
+  --output-path diversity/zero-filtered/exported-core-metrics-tables
