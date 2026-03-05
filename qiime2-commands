@@ -1,0 +1,399 @@
+QIIME2 Code History Deblur
+
+# Create folder for end-to-end analysis
+mkdir microbiome-fruit
+cd microbiome-fruit
+
+# Activate conda environment
+conda activate qiime2
+
+# Import single-end reads into QIIME2
+qiime tools import \
+  --type MultiplexedSingleEndBarcodeInSequence \
+  --input-path forward.fastq.gz \
+  --output-path multiplexed-seqs.qza
+
+# Demultiplex reads
+qiime cutadapt demux-single \
+  --p-cores 16 \
+  --i-seqs multiplexed-seqs.qza \
+  --m-barcodes-file metadata-fruits-2.tsv \
+  --m-barcodes-column barcode \
+  --p-error-rate 0   \
+  --o-per-sample-sequences demultiplexed-seqs.qza \
+  --o-untrimmed-sequences untrimmed-seqs.qza \
+  --verbose
+
+# Create dir to store visualizations
+mkdir visualizations
+
+# Visualize the quality
+qiime demux summarize \
+  --i-data demultiplexed-seqs.qza \
+  --o-visualization visualizations/demultiplexed-seqs.qzv
+
+# Denoise with Deblur
+mkdir deblur 
+
+# apply the initial quality filtering based on the scores
+qiime quality-filter q-score \
+ --i-demux demultiplexed-seqs.qza \
+ --o-filtered-sequences deblur/demux-filtered-deblur.qza \
+ --o-filter-stats deblur/demux-filter-stats-deblur.qza \ 
+ --verbose
+
+#make ASVs using deblur - cutoff based on the demux quality plot (forward reads)
+qiime deblur denoise-16S \
+  --i-demultiplexed-seqs deblur/demux-filtered-deblur.qza \
+  --p-trim-length 190 \
+  --p-jobs-to-start 16 \
+  --o-representative-sequences deblur/rep-seqs-deblur.qza \
+  --o-table deblur/table-deblur.qza \
+  --p-sample-stats \
+  --o-stats deblur/deblur-stats.qza \
+  --verbose
+
+# visualize summary statistics 
+qiime metadata tabulate \
+  --m-input-file deblur/demux-filter-stats-deblur.qza \
+  --o-visualization visualizations/demux-filter-stats-deblur.qzv
+
+qiime deblur visualize-stats \
+  --i-deblur-stats deblur/deblur-stats.qza \
+  --o-visualization visualizations/deblur-stats.qzv
+
+# provides information on how many sequences are associated with each samples and with 
+# each feature
+# histograms of those distributions, and some related summary statistics
+
+qiime feature-table summarize \
+  --i-table deblur/table-deblur.qza \
+  --o-visualization visualizations/table-deblur.qzv \
+  --m-sample-metadata-file metadata-fruit-2.tsv
+
+# provides a mapping of feature IDs to sequences, and links 
+# to easily BLAST each sequence against the NCBI nt database
+
+qiime feature-table tabulate-seqs \
+  --i-data deblur/rep-seqs-deblur.qza \
+  --o-visualization visualizations/rep-seqs.qzv
+
+####### assign taxonomy to reads using clover
+
+qiime feature-classifier classify-sklearn \
+  --i-classifier /mnt/HDD/shyan/2024.09.backbone.v4.nb.sklearn-1.4.2.qza \
+  --i-reads deblur/rep-seqs-deblur.qza \
+  --p-n-jobs 30 \
+  --o-classification taxonomy_greengenes_deblur.qza
+# generate visualization of the resulting mapping from sequence to taxonomy
+
+qiime metadata tabulate \
+   --m-input-file taxonomy_greengenes_deblur.qza \
+   --o-visualization visualizations/taxonomy_greengenes_deblur.qzv
+
+# view the taxonomic composition of the samples by generating an interactive bar plots
+qiime taxa barplot \
+  --i-table deblur/table-deblur.qza \
+  --i-taxonomy taxonomy_greengenes_deblur.qza \
+  --m-metadata-file metadata-fruit-2.tsv \
+  --o-visualization visualizations/taxa-bar-plot_unfiltered_deblur.qzv
+
+##### filter out Unassigned, d__Bacteria;
+qiime taxa filter-table \
+  --i-table deblur/table-deblur.qza \
+  --i-taxonomy taxonomy_greengenes_deblur.qza \
+  --p-mode exact \
+  --p-exclude "Unassigned,d__Bacteria" \
+  --o-filtered-table table-deblur-filtered.qza
+
+##### check taxonomic composition after filtering
+qiime taxa barplot \
+  --i-table deblur/table-deblur-filtered.qza \
+  --i-taxonomy taxonomy_greengenes_deblur.qza \
+  --m-metadata-file metadata-fruit-2.tsv \
+  --o-visualization visualizations/taxa-bar-plot_filtered_deblur.qzv
+
+##### check stats i.e. number of sequences per sample
+qiime feature-table summarize \
+  --i-table deblur/table-deblur-filtered.qza \
+  --o-visualization visualizations/table-summary_filtered.qzv \
+  --m-sample-metadata-file metadata-fruit-2.tsv
+
+# Filter out positive and negative controls (i.e. H2O, Zymo, etc.)
+# Create text file that lists the sample IDs to remove, with one sample ID per line
+qiime feature-table filter-samples \
+  --i-table deblur/table-deblur-filtered.qza \
+  --m-metadata-file control_samples_to_remove.txt \
+  --p-exclude-ids \
+  --o-filtered-table deblur/table-filtered_excl-unknbact_ctrls.qza
+
+##### check stats one more time
+qiime feature-table summarize \
+  --i-table deblur/table-filtered_excl-unknbact_ctrls.qza \
+  --o-visualization visualizations/table-summary_excl-unknbact_ctrls.qzv \
+  --m-sample-metadata-file metadata-fruit-2.tsv
+
+# change final filtered table name for consistency with code below
+mv deblur/table-filtered_excl-unknbact_ctrls.qza deblur/table-deblur-finalv.qza
+mkdir ASVs
+mkdir ASVs/unfiltered
+#export ASVs -- # unfiltered as in not zero-filtered
+
+qiime tools export \
+  --input-path deblur/table-deblur.qza \
+  --output-path ASVs/unfiltered
+
+#convert biom file to tsv
+biom convert -i ASVs/unfiltered/feature-table.biom -o ASVs/unfiltered/ASV_table.tsv --to-tsv
+# Use ASVs to Collapse taxonomic assignment with feature table
+# NOTE: family is 5, genus is 6, and species is 7
+
+mkdir ASVs/unfiltered/taxtable_species
+mkdir ASVs/unfiltered/taxtable_genus
+mkdir ASVs/unfiltered/taxtable_family
+
+qiime taxa collapse \
+--i-table deblur/table-deblur-finalv.qza \
+--i-taxonomy taxonomy_greengenes_deblur.qza \
+--p-level 5 \
+--o-collapsed-table ASVs/unfiltered/taxtable_family/family_table-deblur.qza
+
+qiime taxa collapse \
+  --i-table deblur/table-deblur-finalv.qza \
+  --i-taxonomy taxonomy_greengenes_deblur.qza \
+  --p-level 6 \
+  --o-collapsed-table ASVs/unfiltered/taxtable_genus/genus_table-deblur.qza
+
+qiime taxa collapse \
+  --i-table deblur/table-deblur-finalv.qza \
+  --i-taxonomy taxonomy_greengenes_deblur.qza \
+  --p-level 7 \
+  --o-collapsed-table ASVs/unfiltered/taxtable_species/species_table-deblur.qza  
+# Export qiime taxonomy table as a biom table, then convert biom to txt
+
+qiime tools export \
+  --input-path ASVs/unfiltered/taxtable_species/species_table-deblur.qza \
+  --output-path ASVs/unfiltered/biom_table_species
+
+biom convert -i ASVs/unfiltered/biom_table_species/feature-table.biom -o  ASVs/unfiltered/biom_table_species/species_table_from_biom.tsv --to-tsv
+
+qiime tools export \
+  --input-path ASVs/unfiltered/taxtable_genus/genus_table-deblur.qza \
+  --output-path ASVs/unfiltered/biom_table_genus
+biom convert -i ASVs/unfiltered/biom_table_genus/feature-table.biom -o ASVs/unfiltered/biom_table_genus/genus_table_from_biom.tsv --to-tsv
+
+qiime tools export \
+  --input-path ASVs/unfiltered/taxtable_family/family_table-deblur.qza \
+  --output-path ASVs/unfiltered/biom_table_family
+
+biom convert -i ASVs/unfiltered/biom_table_family/feature-table.biom -o ASVs/unfiltered/biom_table_family/family_table_from_biom.tsv --to-tsv
+
+# Export the taxonomy table
+qiime tools export \
+  --input-path taxonomy_greengenes_deblur.qza \
+  --output-path taxonomy_export
+
+# Get rooted tree - --p-n-threads 14; when none specified default is 1?
+qiime phylogeny align-to-tree-mafft-fasttree \
+  --i-sequences deblur/rep-seqs-deblur.qza \
+  --o-alignment phylogeny/aligned-rep-seqs.qza \
+  --o-masked-alignment phylogeny/masked-aligned-rep-seqs.qza \
+  --o-tree phylogeny/unrooted-tree.qza \
+  --o-rooted-tree phylogeny/rooted-tree.qza \
+  --p-n-threads 14
+
+# Export both unrooted and rooted trees -- exports trees in Newick format
+qiime tools export \
+  --input-path phylogeny/rooted-tree.qza \
+  --output-path phylogeny/exported-rooted-tree/
+qiime tools export \
+  --input-path phylogeny/unrooted-tree.qza \
+  --output-path phylogeny/exported-unrooted-tree/
+
+# Figure out what samples to exclude (based on features/sample) (how does # of features impact metric?)
+# Find sampling depth (look at sampling-depth-table.qzv) -- pick a sampling depth number for which 
+# the greatest difference between samples occurs in the ordered table 
+qiime feature-table summarize \
+  --i-table deblur/table-deblur-finalv.qza \
+  --o-visualization visualizations/sampling-depth-table.qzv \
+  --m-sample-metadata-file metadata-fruit-2.tsv 
+ 
+
+
+# If there's not a clear jump in feature counts between samples, use a rarefaction curve to 
+# determine the best place -- choose a max-depth close to the median feature count
+qiime diversity alpha-rarefaction \
+--i-table deblur/table-deblur-finalv.qza \
+--i-phylogeny phylogeny/rooted-tree.qza \
+--p-max-depth 10000 \
+--m-metadata-file metadata-fruit-2.tsv \
+--o-visualization visualizations/alpha-rarefaction_max-10k.qzv
+
+# Zero filtering with CurvCut
+python3 ~/curvcut/scripts/curvcut.py -ct ASVs/unfiltered/ASV_table.tsv -u 2
+
+# convert ASV table to biom
+biom convert -i ASVs/zerofilteredOTU/ASV_table.zerofiltered.txt -o ASVs/zerofilteredOTU/ASV_table_zerofiltered.biom --table-type="OTU table" --to-json
+
+#Now import that biom into QIIME2
+qiime tools import \
+  --input-path ASVs/zerofilteredOTU/ASV_table_zerofiltered.biom \
+  --type 'FeatureTable[Frequency]' \
+  --input-format BIOMV100Format \
+  --output-path ASVs/zerofilteredOTU/filtered-table_zerofiltered.qza
+
+#zero-filtered -- use sampling depth 6265
+ qiime feature-table summarize \
+  --i-table ASVs/zerofilteredOTU/filtered-table_zerofiltered.qza \
+  --o-visualization visualizations/sampling-depth-table_zero-filtered.qzv \
+  --m-sample-metadata-file metadata-fruit-2.tsv  
+#look at rarefaction slope on zero-filtered features
+
+# Use zero-filtered ASVs to Collapse taxonomic assignment with feature table
+# NOTE: family is 5, genus is 6, and species is 7
+mkdir ASVs/zerofilteredOTU/taxtable_species
+mkdir ASVs/zerofilteredOTU/taxtable_genus
+mkdir ASVs/zerofilteredOTU/taxtable_family
+
+qiime taxa collapse \
+--i-table ASVs/zerofilteredOTU/filtered-table_zerofiltered.qza \
+--i-taxonomy taxonomy_greengenes_deblur.qza \
+--p-level 5 \
+--o-collapsed-table ASVs/zerofilteredOTU/taxtable_family/family_table-deblur.qza
+
+ 
+qiime taxa collapse \
+  --i-table ASVs/zerofilteredOTU/filtered-table_zerofiltered.qza \
+  --i-taxonomy taxonomy_greengenes_deblur.qza \
+  --p-level 6 \
+  --o-collapsed-table ASVs/zerofilteredOTU/taxtable_genus/genus_table-deblur.qza
+ 
+qiime taxa collapse \
+  --i-table ASVs/zerofilteredOTU/filtered-table_zerofiltered.qza \
+  --i-taxonomy taxonomy_greengenes_deblur.qza \
+  --p-level 7 \
+  --o-collapsed-table ASVs/zerofilteredOTU/taxtable_species/species_table-deblur.qza
+
+#export qiime taxonomy table to biom table to txt
+qiime tools export \
+  --input-path ASVs/zerofilteredOTU/taxtable_species/species_table-deblur.qza \
+  --output-path ASVs/zerofilteredOTU/biom_table_species
+biom convert -i ASVs/zerofilteredOTU/biom_table_species/feature-table.biom -o ASVs/zerofilteredOTU/biom_table_species/species_table_from_biom.tsv --to-tsv
+
+# to view
+# cat biom_table_species/species_table_from_biom.tsv
+qiime tools export \
+  --input-path ASVs/zerofilteredOTU/taxtable_genus/genus_table-deblur.qza \
+  --output-path ASVs/zerofilteredOTU/biom_table_genus
+biom convert -i ASVs/zerofilteredOTU/biom_table_genus/feature-table.biom -o ASVs/zerofilteredOTU/biom_table_genus/genus_table_from_biom.tsv --to-tsv
+ 
+# to view
+# cat biom_table_genus/genus_table_from_biom.tsv
+qiime tools export \
+  --input-path ASVs/zerofilteredOTU/taxtable_family/family_table-deblur.qza \
+  --output-path ASVs/zerofilteredOTU/biom_table_family
+
+biom convert -i ASVs/zerofilteredOTU/biom_table_family/feature-table.biom -o ASVs/zerofilteredOTU/biom_table_family/family_table_from_biom.tsv --to-tsv
+
+# Run max-depth AT 10000
+qiime diversity alpha-rarefaction \
+--i-table ASVs/zerofilteredOTU/filtered-table_zerofiltered.qza \
+--i-phylogeny phylogeny/rooted-tree.qza \
+--p-max-depth 10000 \
+--m-metadata-file metadata-fruit-2.tsv \
+--o-visualization visualizations/alpha-rarefaction_max-10k_zerofiltered.qzv
+
+# Use zero-filtered ASVs to Collapse taxonomic assignment with feature table
+# NOTE: family is 5, genus is 6, and species is 7
+mkdir ASVs/zerofilteredOTU/taxtable_species_10k
+mkdir ASVs/zerofilteredOTU/taxtable_genus_10k
+mkdir ASVs/zerofilteredOTU/taxtable_family_10k
+
+qiime taxa collapse \
+--i-table ASVs/zerofilteredOTU/filtered-table_zerofiltered.qza \
+--i-taxonomy taxonomy_greengenes_deblur.qza \
+--p-level 5 \
+--o-collapsed-table ASVs/zerofilteredOTU/taxtable_family_10k/family_table-deblur.qza 
+
+qiime taxa collapse \
+  --i-table ASVs/zerofilteredOTU/filtered-table_zerofiltered.qza \
+  --i-taxonomy taxonomy_greengenes_deblur.qza \
+  --p-level 6 \
+  --o-collapsed-table ASVs/zerofilteredOTU/taxtable_genus_10k/genus_table-deblur.qza 
+
+qiime taxa collapse \
+  --i-table ASVs/zerofilteredOTU/filtered-table_zerofiltered.qza \
+  --i-taxonomy taxonomy_greengenes_deblur.qza \
+  --p-level 7 \
+  --o-collapsed-table ASVs/zerofilteredOTU/taxtable_species_10k/species_table-deblur.qza
+
+#export qiime taxonomy table to biom table to txt
+qiime tools export \
+  --input-path ASVs/zerofilteredOTU/taxtable_species_10k/species_table-deblur.qza \
+  --output-path ASVs/zerofilteredOTU/biom_table_species_10k
+biom convert -i ASVs/zerofilteredOTU/biom_table_species_10k/feature-table.biom -o ASVs/zerofilteredOTU/biom_table_species_10k/species_table_from_biom.tsv --to-tsv
+
+# to view
+# cat biom_table_species/species_table_from_biom.tsv
+qiime tools export \
+  --input-path ASVs/zerofilteredOTU/taxtable_genus/genus_table-deblur.qza \
+  --output-path ASVs/zerofilteredOTU/biom_table_genus_10k
+biom convert -i ASVs/zerofilteredOTU/biom_table_genus_10k/feature-table.biom -o ASVs/zerofilteredOTU/biom_table_genus_10k/genus_table_from_biom.tsv --to-tsv 
+
+
+
+
+
+
+# to view
+# cat biom_table_genus/genus_table_from_biom.tsv
+
+# Perform diversity analysis -- refer to previous steps for sample depth use 
+# Do the following with both zero-filtered and unfiltered ASVs (want unfiltered for unifrac)
+# Note: if filtered, use most recent filtered table instead of table-deblur.qza
+
+qiime tools export \
+  --input-path ASVs/zerofilteredOTU/taxtable_family/family_table-deblur.qza \
+  --output-path ASVs/zerofilteredOTU/biom_table_family_10k
+biom convert -i ASVs/zerofilteredOTU/biom_table_family_10k/feature-table.biom -o ASVs/zerofilteredOTU/biom_table_family_10k/family_table_from_biom.tsv --to-tsv
+
+# to view
+# cat biom_table_family/family_table_from_biom.tsv
+mkdir diversity
+mkdir diversity/zero-filtered_10k
+
+#zero-filtered -- rarefy at 6265
+#diversity analysis change rarefaction depth
+qiime diversity core-metrics-phylogenetic \
+  --i-phylogeny phylogeny/rooted-tree.qza \
+  --i-table ASVs/zerofilteredOTU/filtered-table_zerofiltered.qza \
+  --p-sampling-depth 6265 \
+  --m-metadata-file metadata-fruit-2.tsv \
+  --output-dir diversity/zero-filtered_10k/core-metrics-results
+# based on the sequencing depth and distribution of samples, use 6265 sequences/sample
+
+#export diversity metrics as tables (RUN ONE BY ONE)
+#rename the files after each export -- it doesn't let us name it when exporting
+qiime tools export \
+  --input-path diversity/zero-filtered_10k/core-metrics-results/evenness_vector.qza \
+  --output-path diversity/zero-filtered_10k/exported-core-metrics-tables
+
+qiime tools export \
+  --input-path diversity/zero-filtered_10k/core-metrics-results/faith_pd_vector.qza \
+  --output-path diversity/zero-filtered_10k/exported-core-metrics-tables
+
+qiime tools export \
+  --input-path diversity/zero-filtered_10k/core-metrics-results/observed_features_vector.qza \
+  --output-path diversity/zero-filtered_10k/exported-core-metrics-tables
+
+qiime tools export \
+  --input-path diversity/zero-filtered_10k/core-metrics-results/shannon_vector.qza \
+  --output-path diversity/zero-filtered_10k/exported-core-metrics-tables
+
+qiime tools export \
+  --input-path diversity/zero-filtered_10k/core-metrics-results/unweighted_unifrac_distance_matrix.qza \
+  --output-path diversity/zero-filtered_10k/exported-core-metrics-tables
+
+qiime tools export \
+  --input-path diversity/zero-filtered_10k/core-metrics-results/weighted_unifrac_distance_matrix.qza \
+  --output-path diversity/zero-filtered_10k/exported-core-metrics-tables
