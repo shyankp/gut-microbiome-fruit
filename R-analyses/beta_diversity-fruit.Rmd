@@ -1,0 +1,695 @@
+---
+title: "Microbiome Fruit - Beta Diversity"
+author: "Shyan Polman"
+date: "`r Sys.Date()`" 
+output: html_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+set.seed(123)
+
+```
+# 3. Beta Diversity
+
+## 3.1 CLR transformation
+### 3.1.1 Replace zeros with pseudocount 0 = 0.001
+```{r}
+asv_zerorep <- asv_16S_all
+asv_zerorep[asv_zerorep == 0] <- 0.001
+# tail(asv_zerorep)
+
+species_zerorep <- species_all
+species_zerorep[species_zerorep == 0] <- 0.001
+
+genus_zerorep <- genus_all
+genus_zerorep[genus_zerorep == 0] <- 0.001
+
+filtered_asv_20_zerorep <- filtered_asv_20
+filtered_asv_20_zerorep[filtered_asv_20_zerorep == 0] <- 0.001
+
+
+```
+### 3.1.2 Create function with clr formula to apply transformation (for clr formula, samples = columns)
+```{r}
+clr <- function(x) sweep(log(x), 1, rowMeans(log(x)), "-")
+
+# log(x): calculates the natural logarithm of each element in the matrix x; log() computes the natural logarithm
+# rowMeans(log(x)): computes the mean of each row in the matrix log(x). rowMeans() calculates the row-wise means
+# sweep(log(x), 1, rowMeans(log(x)), "-"): This is where the sweep() function is used - subtracts the row-wise means (obtained from step 2) from each element in the matrix log(x) along the first dimension (rows) - the 1 parameter specifies the dimension along which the operation should be performed, and "-" indicates subtraction
+
+```
+### 3.1.3 Apply clr-transformation function to zero-replaced tables
+```{r}
+asv_tx <- data.frame(t(clr(t(asv_zerorep))), check.names = F)
+
+species_tx <- data.frame(t(clr(t(species_zerorep))), check.names = F)
+
+genus_tx <- data.frame(t(clr(t(genus_zerorep))), check.names = F)
+
+transformed_filtered_asv_20 <- data.frame(t(clr(t(filtered_asv_20_zerorep))), check.names = F)
+
+```
+### 3.1.4 Subset feature data into Treatment or Day groups if needed
+Assign 'group' with desired subgroup variable (see microbiome-ocp.Rmd)
+```{r}
+
+group <- map_all[,1:4]
+head(group)
+
+group$treatment <- factor(group$treatment)
+group$week <- factor(group$week)
+
+```
+
+```{r}
+# subset clr-transformed data according to 'group', if needed 
+asv_tx <- asv_tx[, colnames(asv_tx) %in% group$SampleID]
+
+```
+### 3.1.5 NMDS
+transpose data frames (samples = rows) and make matrix
+```{r}
+clr_m <- as.matrix(t(asv_tx))
+
+```
+check how many dimensions to use for NMDS
+```{r}
+clr_nmds_2 = metaMDS(clr_m, distance = "euclidean", parallel = 2, k = 2)
+clr_nmds_3 = metaMDS(clr_m, distance = "euclidean", parallel = 2, k = 3)
+clr_nmds_2$stress
+
+```
+extract NMDS scores
+```{r}
+clr_scores = as.data.frame(scores(clr_nmds_3))
+
+```
+add map data to scores
+```{r}
+clr_scores$treatment <- group$treatment
+clr_scores$week <- factor(group$week)
+clr_scores$subject <- factor(group$subject)
+
+```
+plot
+```{r}
+# extract the stress value from the NMDS model
+stress_value_2 = clr_nmds_2$stress
+stress_value_3 = clr_nmds_3$stress
+
+p_NMDS12_clr_treat <- ggplot(data = clr_scores) +
+  geom_point(aes(x = NMDS1, y = NMDS2, color = treatment)) + 
+  scale_color_manual(values = c( "#332288","#E066A6"),
+                     labels = c("Half-cup", "Two cups")) +
+  stat_ellipse(geom = "polygon",aes(x = NMDS1, y = NMDS2, fill = treatment, color = treatment), alpha = 0.25) +
+  scale_fill_manual(values = c( "#332288","#E066A6"),
+                    labels = c("Half-cup", "Two cups")) +
+  # labs(title= paste0("Euclidean Distances (Stress: ", round(stress_value_2, 2), ")")) +
+  theme_pubclean()+
+  theme(text = element_text(size = 12),
+        plot.title = element_text(face = "bold")) + 
+  facet_grid(~week, labeller = as_labeller(c("0" = "Week 0", "8"= "Week 8"))) +
+  labs(title = "A", subtitle= "Bacteria",color = "", fill = "")+
+  theme(plot.title = element_text(face = "bold", size = 14, hjust = 0),
+    plot.subtitle = element_text(face = "bold", size = 12, hjust = 0.5))
+p_NMDS12_clr_treat
+
+```
+
+```{r}
+# Putting treatments on the same graph
+p_NMDS12_clr_treat_2 <- ggplot(data = clr_scores) +
+  geom_point(aes(x = NMDS1, y = NMDS2, color = week)) + 
+  scale_color_manual(values = c( "#EC172B","#0DAFB5"),
+                     labels = c("Week 0", "Week 8")) +
+  stat_ellipse(geom = "polygon",aes(x = NMDS1, y = NMDS2, fill = week, color = week), alpha = 0.25) +
+  scale_fill_manual(values = c( "#EC172B","#0DAFB5"),
+                    labels = c("Week 0", "Week 8")) +
+  # labs(title= paste0("Euclidean Distances (Stress: ", round(stress_value_2, 2), ")")) +
+  theme_pubclean()+
+  theme(text = element_text(size = 12),
+        plot.title = element_text(face = "bold")) + 
+  facet_grid(~treatment, labeller = as_labeller(c("H" = "Half cup", "T"= "Two cup"))) +
+  labs(title = "A", subtitle= "Bacteria",color = "", fill = "")+
+  theme(plot.title = element_text(face = "bold", size = 14, hjust = 0),
+    plot.subtitle = element_text(face = "bold", size = 12, hjust = 0.5))
+
+p_NMDS12_clr_treat_2
+```
+Save plots as .png images
+```{r}
+ggsave(filename = "~/Documents/Programming/Microbiome/microbiome-ocp/data-analyses/results/beta/NMDS/NMDS12-plot_clr-treat.png", plot = p_NMDS12_clr_treat, width = 6, height = 6, dpi = 300)
+
+
+```
+### 3.1.6 PERMANOVA - stats for beta diversity
+Get distances
+```{r}
+dist_asv <- vegdist(as.matrix(t(asv_tx)), method ='euclidean')
+
+```
+do 10000 permutations
+```{r}
+
+
+perm_asv_treat <- adonis2(dist_asv ~ treatment * week, group, permutations = 9999)
+
+# perm_asv <- adonis2(dist_asv ~ treatment * week, group, permutations = 9999, method="euclidean", by="margin", parallel = 4)
+perm_asv_treat
+
+```
+```{r}
+# Add by = terms to get a p-value for each factor
+perm_asv_treat_2 <- adonis2(dist_asv ~ treatment * week, data = group,permutations = 9999,by = "terms")
+
+
+perm_asv_treat_2
+```
+
+
+
+
+Save PERMANOVA results as .csv file
+```{r}
+write.csv(perm_asv_treat, "~/Documents/Programming/Microbiome/microbiome-ocp/data-analyses/results/beta/PERMANOVA/PERMANOVA-results_asv_clr.csv", row.names = FALSE)
+
+```
+### 3.1.6 Beta-dispersion (distance from centroid of group)
+Make factor vectors for the data
+```{r}
+trt_factor <- factor(group$treatment)
+week_factor <- factor(group$week)
+
+# Calculate beta dispersion for each grouping - this uses the distance values calculated in the PERMANOVA section
+# betadisper() calculates the dispersion for each group, put the distances from betadisper() and 'trt_factor' into a dataframe to graph them
+# permutest() is a permutation-based test of multivariate homogeneity of group dispersions; null hypothesis = no difference in dispersion between groups -- if the groups do not have similar variance (if the p value is high), use nonparametric stats tests on them
+
+```
+
+```{r}
+trt_betadist_clr <- betadisper(dist_asv, trt_factor)
+distances_trt_clr <- data.frame(trt_betadist_clr[['distances']])
+distances_trt_clr <- cbind(distances_trt_clr, trt_factor)
+colnames(distances_trt_clr) <- c('Distance to Centroid', 'Treatment')
+head(distances_trt_clr)
+
+week_betadist_clr <- betadisper(dist_asv, week_factor)
+distances_week_clr <- data.frame(week_betadist_clr[['distances']])
+distances_week_clr <- cbind(distances_week_clr, week_factor)
+colnames(distances_week_clr) <- c('Distance to Centroid', 'Week')
+head(distances_week_clr)
+
+```
+
+```{r}
+test_trt_betadist_clr <- permutest(trt_betadist_clr)
+test_trt_betadist_clr
+
+test_week_betadist_clr <- permutest(week_betadist_clr)
+test_week_betadist_clr
+
+# Do stats next -- 
+
+```
+### graph beta dispersion
+```{r}
+B_trt_clr <- ggboxplot(data = distances_trt_clr, x = "Treatment", y = "Distance to Centroid" ) +
+theme_classic() +
+geom_point() +
+labs(title = "Euclidean Distances")
+B_trt_clr
+
+B_week_clr <- ggboxplot(data = distances_week_clr, x = "Week", y = "Distance to Centroid" ) +
+theme_classic() +
+geom_point() +
+labs(title = "Euclidean Distances")
+B_week_clr
+
+```
+
+```{r}
+betadipsr_figure_clr <- ggarrange(B_trt_clr, B_week_clr,
+                              labels = c("A", "B"),
+                              ncol = 2, nrow = 1)
+betadipsr_figure_clr
+
+```
+
+
+```{r}
+
+# Combine treatment and week into a new factor for use in betadisper
+group$treatmentweek <- paste(group$treatment, group$week, sep = " & ")
+
+# Create combined factor
+combined_factor <- factor(group$treatmentweek)
+
+# Apply betadisper using the combined factor
+combined_betadist_clr <- betadisper(dist_asv, combined_factor)
+
+# Calculate the distances for each combination of Day and Diet
+distances_combined_clr <- data.frame(SampleID = rownames(combined_betadist_clr$vectors), 
+                                     Distance_to_Centroid = combined_betadist_clr[['distances']])
+
+# Merge with the original group data to get the Day, Diet, and combined factor info
+distances_combined_clr <- merge(distances_combined_clr, group[, c("SampleID", "treatment", "week", "treatmentweek")], by = "SampleID", all.x = TRUE)
+
+# View the result
+head(distances_combined_clr)
+
+
+
+```
+
+
+
+```{r}
+
+# Now we can graph
+distances_combined_clr$treatmentweek <- factor(distances_combined_clr$treatmentweek)
+combined_diet_clr <- ggboxplot(data = distances_combined_clr, x = "treatmentweek", y = "Distance_to_Centroid" ) +
+theme_classic() +
+geom_point() +
+labs(title = "Euclidean Distances")
+combined_diet_clr
+
+
+
+```
+## 3.2 Weighted UniFrac Distances
+Check dimensions of UniFrac matrix
+```{r}
+dim(weighted_unfiltered)
+
+# assign matrix to new variable
+weighted_unifrac_dist_matrix <- weighted_unfiltered
+dim(weighted_unifrac_dist_matrix)
+
+```
+filter out samples according to 'group' and complete.cases()
+```{r}
+weighted_unifrac_dist_matrix <- weighted_unifrac_dist_matrix[(rownames(weighted_unifrac_dist_matrix) %in% group$SampleID),]
+weighted_unifrac_dist_matrix <- weighted_unifrac_dist_matrix[,(colnames(weighted_unifrac_dist_matrix) %in% group$SampleID)]
+
+# check dimensions one more time
+dim(weighted_unifrac_dist_matrix)
+
+```
+### 3.2.1 NMDS
+check how many dimensions to use for NMDS
+```{r}
+w_uni_nmds_2 = metaMDS(weighted_unifrac_dist_matrix, distance = "euclidean", parallel = 2, k = 2)
+w_uni_nmds_3 = metaMDS(weighted_unifrac_dist_matrix, distance = "euclidean", parallel = 2, k = 3)
+
+```
+extract NMDS scores
+```{r}
+w_uni_scores = as.data.frame(scores(w_uni_nmds_2))
+
+```
+add map data to scores
+```{r}
+w_uni_scores$treatment <- group$treatment
+w_uni_scores$week <- factor(group$week)
+
+```
+plot
+```{r}
+p_NMDS12_weighted_unifrac_treatment <- ggplot(data = w_uni_scores) +
+  geom_point(aes(x = NMDS1, y = NMDS2, color = treatment)) + 
+  scale_color_manual(values = c( "#332288","#E066A6", "#E6A316", "#256769")) +
+  stat_ellipse(geom = "polygon",aes(x = NMDS1, y = NMDS2, fill = treatment, color = treatment), alpha = 0.25) +
+  scale_fill_manual(values = c( "#332288","#E066A6", "#E6A316", "#256769")) +
+  theme_classic() +
+  labs(title= "Weighted Unifrac Distances") + # labs(title= "Euclidean Distances")
+  theme(text = element_text(size = 15)) + 
+  facet_wrap(~week)
+p_NMDS12_weighted_unifrac_treatment
+
+p_NMDS12_weighted_unifrac_week <- ggplot(data = w_uni_scores) +
+  geom_point(aes(x = NMDS1, y = NMDS2, color = week)) + 
+  scale_color_manual(values = c( "#332288","#E066A6", "#E6A316", "#256769")) +
+  stat_ellipse(geom = "polygon",aes(x = NMDS1, y = NMDS2, fill = week, color = week), alpha = 0.25) +
+  scale_fill_manual(values = c( "#332288","#E066A6", "#E6A316", "#256769")) +
+  theme_classic() +
+  labs(title= "Weighted Unifrac Distances") + # labs(title= "Euclidean Distances")
+  theme(text = element_text(size = 15)) + 
+  facet_wrap(~treatment)
+p_NMDS12_weighted_unifrac_week
+
+```
+Save plots as .png images
+```{r}
+#ggsave(filename = "~/Documents/Programming/Microbiome/microbiome-ocp/data-analyses/results/beta/NMDS/NMDS12-plot_weighted_unifrac.png", plot = p_NMDS12_weighted_unifrac, width = 6, height = 6, dpi = 300)
+
+```
+### 3.2.6 PERMANOVA - stats for beta diversity
+Make distance object (dist object can be used in NMDS or PCoA)
+```{r}
+weighted_unifrac_dist <- as.dist(weighted_unifrac_dist_matrix)
+
+```
+do 10000 permutations
+```{r}
+perm_weighted_unifrac <- adonis2(weighted_unifrac_dist ~ treatment * week, group, permutations = 9999, method="euclidean", by="margin", parallel = 4)
+perm_weighted_unifrac
+
+```
+Save PERMANOVA results as .csv file
+```{r}
+write.csv(perm_unw_unifrac, "~/Documents/Programming/Microbiome/microbiome-ocp/data-analyses/results/beta/PERMANOVA/PERMANOVA-results_unweighted_unifrac.csv", row.names = FALSE)
+
+```
+### 3.2.6 Beta-dispersion (distance from centroid of group)
+Make factor vectors for the data
+```{r}
+trt_factor <- factor(group$treatment)
+week_factor <- factor(group$week)
+
+# Calculate beta dispersion for each grouping - this uses the distance values calculated in the PERMANOVA section
+# betadisper() calculates the dispersion for each group, put the distances from betadisper() and 'trt_factor' into a dataframe to graph them
+# permutest() is a permutation-based test of multivariate homogeneity of group dispersions; null hypothesis = no difference in dispersion between groups -- if the groups do not have similar variance (if the p value is high), use nonparametric stats tests on them
+
+```
+
+```{r}
+trt_betadist_weighted_uni <- betadisper(weighted_unifrac_dist, trt_factor)
+distances_trt_weighted_uni <- data.frame(trt_betadist_weighted_uni[['distances']])
+distances_trt_weighted_uni <- cbind(distances_trt_weighted_uni, trt_factor)
+colnames(distances_trt_weighted_uni) <- c('Distance to Centroid', 'Treatment')
+head(distances_trt_weighted_uni)
+
+week_betadist_weighted_uni <- betadisper(weighted_unifrac_dist, week_factor)
+distances_week_weighted_uni <- data.frame(trt_betadist_weighted_uni[['distances']])
+distances_week_weighted_uni <- cbind(distances_week_weighted_uni, week_factor)
+colnames(distances_week_weighted_uni) <- c('Distance to Centroid', 'Week')
+head(distances_week_weighted_uni)
+
+```
+
+```{r}
+test_trt_betadist_weighted_uni <- permutest(trt_betadist_weighted_uni)
+test_trt_betadist_weighted_uni
+
+test_week_betadist_weighted_uni <- permutest(week_betadist_weighted_uni)
+test_week_betadist_weighted_uni
+
+# Do stats next -- 
+
+```
+### graph beta dispersion
+```{r}
+B_trt_weighted_uni <- ggboxplot(data = distances_trt_weighted_uni, x = "Treatment", y = "Distance to Centroid" ) +
+theme_classic() +
+geom_point() +
+labs(title = "UniFrac Distances")
+B_trt_weighted_uni
+
+B_week_weighted_uni <- ggboxplot(data = distances_week_weighted_uni, x = "Week", y = "Distance to Centroid" ) +
+theme_classic() +
+geom_point() +
+labs(title = "UniFrac Distances")
+B_week_weighted_uni
+
+```
+
+```{r}
+betadipsr_figure_weighted_uni <- ggarrange(B_trt_weighted_uni, B_week_weighted_uni,
+                              labels = c("A", "B"),
+                              ncol = 2, nrow = 1)
+betadipsr_figure_weighted_uni
+
+```
+```{r}
+# Calc betadisper using the combined factor
+combined_betadist_weighted_uni <- betadisper(weighted_unifrac_dist, combined_factor)
+
+# Calc the distances for each combination of Day and Diet
+distances_combined_weighted_uni <- data.frame(SampleID = rownames(combined_betadist_weighted_uni$vectors), 
+                                     Distance_to_Centroid = combined_betadist_weighted_uni[['distances']])
+
+# Merge with group to include treatment, week, and treatmentweek info
+distances_combined_weighted_uni <- merge(distances_combined_weighted_uni, group[, c("SampleID", "treatment", "week", "treatmentweek")], 
+                                by = "SampleID", all.x = TRUE)
+# Double check
+head(distances_combined_weighted_uni)
+
+
+```
+
+# Now we can graph
+```{r}
+distances_combined_weighted_uni$treatmentweek <- factor(distances_combined_weighted_uni$treatmentweek)
+combined_treatment_weighted_uni <- ggboxplot(data = distances_combined_weighted_uni, x = "treatmentweek", y = "Distance_to_Centroid" ) +
+theme_classic() +
+geom_point() +
+labs(title = "Weighted Unifrac Distances") +
+scale_color_manual(values = c("H & 0" = "#17AB0E", 
+                              "T & 0" = "#E22E8C", 
+                              "H & 8" = "#17AB0E", 
+                              "T & 8" = "#E22E8C")) 
+
+
+combined_treatment_weighted_uni
+
+
+combined_treatment_weighted_uni <- ggboxplot(data = distances_combined_weighted_uni, x = "treatmentweek", y = "Distance_to_Centroid") +
+  theme_classic() +
+  geom_boxplot(aes(fill = treatmentweek), alpha = 0.5, color = "black") +  
+  scale_fill_manual(values = c("H & 0" = "#17AB0E", 
+                               "H & 8" = "#17AB0E", 
+                               "T & 0" = "#E22E8C", 
+                               "T & 8" = "#E22E8C")) +  
+  labs(title = "Weighted Unifrac Distances",
+       x = "Treatment & Week",        
+       y = "Beta Dispersion") 
+
+combined_treatment_weighted_uni
+
+
+```
+
+## 3.3 Unweighted UniFrac Distances
+Check dimensions of UniFrac matrix
+```{r}
+# use unweighted_unfiltered
+dim(unweighted_unfiltered)
+
+# assign matrix to new variable
+unweighted_unifrac_dist_matrix <- unweighted_unfiltered
+dim(unweighted_unifrac_dist_matrix)
+
+```
+
+```{r}
+unweighted_unifrac_dist_matrix <- unweighted_unifrac_dist_matrix[(rownames(unweighted_unifrac_dist_matrix) %in% group$SampleID),]
+unweighted_unifrac_dist_matrix <- unweighted_unifrac_dist_matrix[,(colnames(unweighted_unifrac_dist_matrix) %in% group$SampleID)]
+
+# check dimensions one more time
+dim(unweighted_unifrac_dist_matrix)
+
+```
+### 3.3.1 NMDS
+check how many dimensions to use for NMDS
+```{r}
+unw_uni_nmds_2 = metaMDS(unweighted_unifrac_dist_matrix, distance = "euclidean", parallel = 2, k = 2)
+unw_uni_nmds_3 = metaMDS(unweighted_unifrac_dist_matrix, distance = "euclidean", parallel = 2, k = 3)
+
+```
+
+extract NMDS scores
+```{r}
+unw_uni_scores = as.data.frame(scores(unw_uni_nmds_2))
+
+```
+add map data to scores
+```{r}
+unw_uni_scores$treatment <- group$treatment
+unw_uni_scores$week <- factor(group$week)
+
+```
+
+plot
+```{r}
+p_NMDS12_unweighted_unifrac_treatment <- ggplot(data = unw_uni_scores) +
+  geom_point(aes(x = NMDS1, y = NMDS2, color = treatment)) + 
+  scale_color_manual(values = c( "#332288","#E066A6")) +
+  stat_ellipse(geom = "polygon",aes(x = NMDS1, y = NMDS2, fill = treatment, color = treatment), alpha = 0.25) +
+  scale_fill_manual(values = c( "#332288","#E066A6")) +
+  theme_classic() +
+  labs(title= "Unweighted Unifrac Distances") + # labs(title= "Euclidean Distances")
+  theme(text = element_text(size = 15)) + 
+  facet_wrap(~week)
+p_NMDS12_unweighted_unifrac_treatment
+
+p_NMDS12_unweighted_unifrac_week <- ggplot(data = unw_uni_scores) +
+  geom_point(aes(x = NMDS1, y = NMDS2, color = week)) + 
+  scale_color_manual(values = c( "#332288","#E066A6")) +
+  stat_ellipse(geom = "polygon",aes(x = NMDS1, y = NMDS2, fill = week, color = week), alpha = 0.25) +
+  scale_fill_manual(values = c( "#332288","#E066A6")) +
+  theme_classic() +
+  labs(title= "Unweighted Unifrac Distances") + # labs(title= "Euclidean Distances")
+  theme(text = element_text(size = 15)) + 
+  facet_wrap(~treatment)
+p_NMDS12_unweighted_unifrac_week
+
+```
+### 3.3.6 PERMANOVA - stats for beta diversity
+Make distance object (dist object can be used in NMDS or PCoA)
+```{r}
+unweighted_unifrac_dist <- as.dist(unweighted_unifrac_dist_matrix)
+
+```
+do 10000 permutations
+```{r}
+perm_unweighted_unifrac <- adonis2(unweighted_unifrac_dist ~ treatment * week, group, permutations = 9999, method="euclidean", by="margin", parallel = 4)
+perm_unweighted_unifrac
+
+```
+Save PERMANOVA results as .csv file
+```{r}
+write.csv(perm_unw_unifrac, "~/Documents/Programming/Microbiome/microbiome-ocp/data-analyses/results/beta/PERMANOVA/PERMANOVA-results_unweighted_unifrac.csv", row.names = FALSE)
+
+```
+### 3.3.6 Beta-dispersion (distance from centroid of group)
+Make factor vectors for the data
+```{r}
+trt_factor <- factor(group$treatment)
+week_factor <- factor(group$week)
+
+# Calculate beta dispersion for each grouping - this uses the distance values calculated in the PERMANOVA section
+# betadisper() calculates the dispersion for each group, put the distances from betadisper() and 'trt_factor' into a dataframe to graph them
+# permutest() is a permutation-based test of multivariate homogeneity of group dispersions; null hypothesis = no difference in dispersion between groups -- if the groups do not have similar variance (if the p value is high), use nonparametric stats tests on them
+
+```
+
+```{r}
+trt_betadist_unweighted_uni <- betadisper(unweighted_unifrac_dist, trt_factor)
+distances_trt_unweighted_uni <- data.frame(trt_betadist_unweighted_uni[['distances']])
+distances_trt_unweighted_uni <- cbind(distances_trt_unweighted_uni, trt_factor)
+colnames(distances_trt_unweighted_uni) <- c('Distance to Centroid', 'Treatment')
+head(distances_trt_unweighted_uni)
+
+week_betadist_unweighted_uni <- betadisper(unweighted_unifrac_dist, week_factor)
+distances_week_unweighted_uni <- data.frame(trt_betadist_unweighted_uni[['distances']])
+distances_week_unweighted_uni <- cbind(distances_week_unweighted_uni, week_factor)
+colnames(distances_week_unweighted_uni) <- c('Distance to Centroid', 'Week')
+head(distances_week_unweighted_uni)
+
+```
+```{r}
+test_trt_betadist_unweighted_uni <- permutest(trt_betadist_unweighted_uni)
+test_trt_betadist_unweighted_uni
+
+test_week_betadist_unweighted_uni <- permutest(week_betadist_unweighted_uni)
+test_week_betadist_unweighted_uni
+
+# Do stats next -- 
+
+```
+
+### graph beta dispersion
+```{r}
+B_trt_unweighted_uni <- ggboxplot(data = distances_trt_unweighted_uni, x = "Treatment", y = "Distance to Centroid" ) +
+theme_classic() +
+geom_point() +
+labs(title = "Unweighted UniFrac Distances")
+B_trt_unweighted_uni
+
+B_week_unweighted_uni <- ggboxplot(data = distances_week_unweighted_uni, x = "Week", y = "Distance to Centroid" ) +
+theme_classic() +
+geom_point() +
+labs(title = "Unweighted UniFrac Distances")
+B_week_unweighted_uni
+
+```
+```{r}
+betadipsr_figure_unweighted_uni <- ggarrange(B_trt_unweighted_uni, B_week_unweighted_uni,
+                              labels = c("A", "B"),
+                              ncol = 2, nrow = 1)
+betadipsr_figure_unweighted_uni
+
+```
+
+```{r}
+# Calc betadisper using the combined factor
+combined_betadist_unweighted_uni <- betadisper(unweighted_unifrac_dist, combined_factor)
+
+# Calc the distances for each combination of Day and Diet
+distances_combined_unweighted_uni <- data.frame(SampleID = rownames(combined_betadist_unweighted_uni$vectors), 
+                                     Distance_to_Centroid = combined_betadist_unweighted_uni[['distances']])
+
+# Merge with group to include treatment, week, and treatmentweek info
+distances_combined_unweighted_uni <- merge(distances_combined_unweighted_uni, group[, c("SampleID", "treatment", "week", "treatmentweek")], 
+                                by = "SampleID", all.x = TRUE)
+# Double check
+head(distances_combined_unweighted_uni)
+
+
+```
+# Now we can graph
+```{r}
+distances_combined_unweighted_uni$treatmentweek <- factor(distances_combined_unweighted_uni$treatmentweek)
+combined_treatment_unweighted_uni <- ggboxplot(data = distances_combined_unweighted_uni, x = "treatmentweek", y = "Distance_to_Centroid" ) +
+theme_classic() +
+geom_point() +
+labs(title = "Unweighted Unifrac Distances") +
+scale_color_manual(values = c("H & 0" = "#17AB0E", 
+                              "T & 0" = "#E22E8C", 
+                              "H & 8" = "#17AB0E", 
+                              "T & 8" = "#E22E8C")) 
+
+
+combined_treatment_unweighted_uni
+
+
+combined_treatment_unweighted_uni <- ggboxplot(data = distances_combined_unweighted_uni, x = "treatmentweek", y = "Distance_to_Centroid") +
+  theme_classic() +
+  geom_boxplot(aes(fill = treatmentweek), alpha = 0.5, color = "black") +  
+  scale_fill_manual(values = c("H & 0" = "#17AB0E", 
+                               "H & 8" = "#17AB0E", 
+                               "T & 0" = "#E22E8C", 
+                               "T & 8" = "#E22E8C")) +  
+  labs(title = "Unweighted Unifrac Distances",
+       x = "Treatment & Week",        
+       y = "Beta Dispersion") 
+
+combined_treatment_unweighted_uni
+
+
+```
+
+
+
+
+### Saving clr transformed data for PyBootNet
+
+```{r}
+
+
+transposed_clr_asv_save <- transposed_clr_asv
+SampleIDs <- rownames(transposed_clr_asv_save)
+rownames(transposed_clr_asv_save) <- NULL
+transposed_clr_asv_save <- cbind(SampleID,transposed_clr_asv_save)
+
+
+write.csv(transposed_clr_asv_save,"transformed_asv.csv", row.names = FALSE)
+
+
+```
+
+
+```{r}
+
+
+transposed_clr_asv_20 <- data.frame(t(transformed_filtered_asv_20))
+transposed_clr_asv_20_save <- transposed_clr_asv_20
+SampleIDs <- rownames(transposed_clr_asv_20_save)
+rownames(transposed_clr_asv_20_save) <- NULL
+transposed_clr_asv_20_save <- cbind(SampleID,transposed_clr_asv_save)
+
+
+write.csv(transposed_clr_asv_20_save,"transformed_filtered20_asv.csv", row.names = FALSE)
+
+
+```

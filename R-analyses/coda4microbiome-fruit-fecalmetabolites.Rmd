@@ -1,0 +1,446 @@
+---
+title: "coda4microbiome-fruit for metabolites"
+author: "Shyan Polman"
+date: "`r Sys.Date()`"
+output: html_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+Set working directory
+```{r}
+
+setwd("/Users/shyanpolman/microbiome-fruit/data-analyses")
+getwd()
+
+```
+Load coda4microbiome package
+```{r Load Packages}
+library(coda4microbiome)
+library(ggplot2)
+
+```
+
+```{r}
+# to reproduce the results
+set.seed(123)
+
+```
+# 5. coda4microbiome - CH4 & H2 levels signatures in Control/Users
+Assign "group" with metadata subset
+
+I already established a group in microbiome-fruit_pub.Rmd [insert group code below]
+```{r}
+
+fecal_metabolites <- read.csv("~/microbiome-fruit/Hooshmand_LCMP_Feces_Metabolites.csv", header = TRUE)
+
+colnames(fecal_metabolites)[1] <- 'Metabolite Name'
+
+
+# Replace the "." back to "-" in the Sample IDs
+colnames(fecal_metabolites) <- gsub("\\.", "-", colnames(fecal_metabolites))
+
+
+
+```
+
+### Run coda4microbiome algorithm
+
+### 1. Create a Transposed Data Frame. A transposed data frame x_species is created from the original data frame species
+
+### 2. Factorize the half-cup/two-cup treatment groups. Create a factor variable y vector  by extracting treatment information for 'Half-cup' & 'Two-cup' subjects from the map_all data.
+
+```{r}
+
+#1
+
+
+x_fecal_metabolites <- data.frame(t(fecal_metabolites), check.names = T)
+
+# Replace the "." back to "-" in the Metabolite Name
+colnames(x_fecal_metabolites) <- gsub("\\.", "-", colnames(x_fecal_metabolites))
+
+# Reorder x_species rows to match map_all SampleID order
+x_fecal_metabolites_ordered <- x_fecal_metabolites[map_all$SampleID, ]
+
+x_time = map_all$week;
+
+subject_id = map_all$SampleID;
+
+#2 
+y = factor(map_all$treatment);
+
+ini_time = 0;
+
+end_time = 8;
+
+
+# checking the levels
+
+# levels(factor(map_all$treatment))
+
+# Half-cup is the baseline 
+
+
+
+```
+
+### 3. Apply regression. Regression is applied using the coda_glmnet_longitudinal function to identify important taxa in 'Half-cup' & 'Two-cup' treatments.
+```{r}
+
+set.seed(123)
+
+
+
+coda_glmnet_long_fecal <-coda_glmnet_longitudinal(x_fecal_metabolites,y, x_time, subject_id, ini_time, end_time, lambda="lambda.min",nfolds=5)
+
+
+
+```
+
+
+### 4. Extract Accuracy Measure. The apparent Area Under the Curve (AUC) is extracted as an accuracy measure from the regression results.
+
+```{r}
+coda_glmnet_long_fecal$taxa.num
+
+
+coda_glmnet_long_fecal$taxa.name
+
+
+coda_glmnet_long_fecal$`log-contrast coefficients`
+
+
+
+```
+
+
+
+
+
+```{r}
+
+coda_glmnet_long_fecal$`apparent AUC`
+coda_glmnet_long_fecal$`predictions plot`
+coda_glmnet_long_fecal$`signature plot`
+
+
+```
+
+
+
+
+
+
+### 5. Create a Data Frame with Genera and Coefficients. A data frame coda_balance_coeff_control_ocis created to store genera names and their corresponding coefficients from the regression
+```{r}
+
+coda_balance_coeff_fecal <- data.frame(cbind(coda_glmnet_long_fecal$`log-contrast coefficients`, coda_glmnet_long_fecal$taxa.name))
+# view(coda_balance_coeff)
+
+```
+
+
+### 6. Data Frame Manipulations
+
+```{r}
+# Set row names of the data frame coda_balance the taxa names obtained from the regression results
+rownames(coda_balance_coeff_fecal) <- coda_balance_coeff_fecal$taxa.name
+# Set column names of the data frame to "Coefficient_full" and "Metabolites" for clarity.
+colnames(coda_balance_coeff_fecal) <- c("Coefficient_full", "Metabolites")
+# Convert "Coefficient_full" column to numeric type, and create a new column "Coefficient" by rounding "Coefficient_full" to two decimal places
+coda_balance_coeff_fecal$Coefficient_full <- as.numeric(coda_balance_coeff_fecal$Coefficient_full)
+coda_balance_coeff_fecal$Coefficient <-as.numeric(format(round(coda_balance_coeff_fecal$Coefficient_full, 2), nsmall = 2))
+# Determine Positive or Negative Coefficients. Create "PosNeg" column based on whether the coefficient is positive or negative; contains the labels "Positive" or "Negative" accordingly.
+coda_balance_coeff_fecal$PosNeg <- with(coda_balance_coeff_fecal, ifelse(Coefficient > 0, "Positive", "Negative"))
+# Assign Group Labels. The "Group" column is assigned labels "High" or "Low" based on the "PosNeg" column. If the coefficient is positive, it is labeled as "Low"; otherwise, it is labeled as "High".
+coda_balance_coeff_fecal$Group <- with(coda_balance_coeff_fecal, ifelse(PosNeg == "Positive", "Low", "High"))
+coda_balance_coeff_fecal
+```
+
+### 7. Create Data Frame with Samples, Predictions, and Variables. A data frame coda_balances_long_predictions is created to store balance predictions along with sex, group, and sample type information
+
+```{r}
+coda_balances_long_predictions_fecal <- data.frame(coda_glmnet_long_fecal$predictions)
+colnames(coda_balances_long_predictions_fecal) <- c("Balance")
+coda_balances_long_predictions_fecal$treatment <- factor(map_all$treatment)
+coda_balances_long_predictions_fecal$week <- factor(map_all$week)
+coda_balances_long_predictions_fecal
+
+
+
+```
+
+### 8. Create Plots. The first one is a boxplot and scatter plot of microbial balances based on treatment and week. The second one is a bar plot showing genera in the selected balance, filtered based on a coefficient threshold.
+# Graph Sample Balances and Species Coefficients (coeff > 0.099)
+
+```{r}
+# Species coefficient plot
+#plot only the genera that are at least 5% of the contribution to the balance
+coda_balance_coeff_10p_fecal <- coda_balance_coeff_fecal[(coda_balance_coeff_fecal$Coefficient >= 0.049 | coda_balance_coeff_fecal$Coefficient<= -0.049),]
+coda_balance_coeff_10p_fecal
+
+
+```
+```{r}
+# Species coefficient plot
+#plot only the genera that are at least 10% of the contribution to the balance
+coda_balance_coeff_10p_fecal <- coda_balance_coeff_fecal[(coda_balance_coeff_fecal$Coefficient >= 0.099 | coda_balance_coeff_fecal$Coefficient<= -0.099),]
+coda_balance_coeff_10p_fecal
+
+
+```
+
+```{r}
+####
+####
+
+p_sample_genera_fecal <- ggplot(
+  data = coda_balance_coeff_10p_fecal, 
+  aes(x = reorder(Metabolites, Coefficient), y = Coefficient)) +
+  geom_bar(stat="identity", width = 0.7, aes(color = Group, fill = Group), show.legend = FALSE) +
+  scale_color_manual(values = c("#332288", "#E066A6")) +
+  scale_fill_manual(values = c("#332288", "#E066A6")) +
+  theme_classic() +
+  labs(title = "Fecal Metabolites") +
+  xlab(" ") + ylab("Log-contrast Coefficient") +
+  theme(text = element_text(size = 15))  +
+  theme(plot.title = element_text(size=20, face = "bold",, hjust = 0.5)) +
+  coord_flip() 
+p_sample_genera_fecal
+
+# Balance prediction plot
+p_control_sample_balances_fecal <- ggplot(data = coda_balances_long_predictions_fecal, aes(x = treatment, y = Balance, color = treatment)) +
+  geom_line() +
+#  geom_point() +
+  geom_boxplot() +
+  scale_color_manual(values = c("#332288", "#E066A6"))+
+  scale_fill_manual(values = c("#332288", "#E066A6")) +
+  theme_classic() +
+  labs(title = "",
+       color = "Group") +  # Change legend title
+  xlab(" ") + ylab("Balance Value") +
+  theme(text = element_text(size = 15))  +
+  theme(plot.title = element_text(size=16)) +
+  scale_x_discrete(labels = c("H" = "Half-cup", "T" = "Two-cup")) +
+  coord_flip() +
+  theme(legend.position = "none")
+
+p_control_sample_balances_fecal
+
+coda_fecal<- egg::ggarrange(p_sample_genera_fecal, p_control_sample_balances_fecal, labels = c("", ""), 
+                                          ncol = 1, nrow = 2, heights = c(1,0.25))
+as_ggplot(coda_fecal)
+
+```
+```{r}
+
+ggsave("fig4_coda_fecal.png", plot = coda_fecal, width = 12, height = 6, units = "in", dpi = 300)
+
+
+
+
+```
+
+Subset rows that only contain two cup samples
+
+```{r}
+
+x_fecal_metabolites_ordered_twocup <- x_fecal_metabolites_ordered[1:76, ]
+
+sub_map <- map_all[1:76, ]
+
+y_twocup <- factor(sub_map$week)
+
+
+```
+
+
+## Two cup condition only week 0 vs week 8
+
+```{r}
+set.seed(123)
+
+#coda_glmnet_twocup <- coda_glmnet(x_species_ordered ,y, x_time, subject_id, ini_time, end_time, lambda="lambda.min",nfolds=5)
+
+coda_glmnet_fecalmet_twocup <- coda_glmnet(x = x_fecal_metabolites_ordered_twocup, y = y_twocup, lambda = "lambda.min", nvar = NULL, alpha = 0.9, nfolds = 7, showPlots = TRUE, coef_threshold = 0)
+
+
+
+
+```
+
+
+
+### 4. Extract Accuracy Measure. The apparent Area Under the Curve (AUC) is extracted as an accuracy measure from the regression results.
+
+```{r}
+coda_glmnet_fecalmet_twocup$taxa.num
+
+
+coda_glmnet_fecalmet_twocup$taxa.name
+
+
+coda_glmnet_fecalmet_twocup$`log-contrast coefficients`
+
+
+
+```
+
+
+
+
+
+```{r}
+
+coda_glmnet_fecalmet_twocup$`apparent AUC`
+coda_glmnet_fecalmet_twocup$`predictions plot`
+coda_glmnet_fecalmet_twocup$`signature plot`
+
+
+```
+
+
+
+
+
+
+### 5. Create a Data Frame with Genera and Coefficients. A data frame coda_balance_coeff_control_ocis created to store genera names and their corresponding coefficients from the regression
+```{r}
+
+coda_balance_coeff_fecalmet_twocup <- data.frame(cbind(coda_glmnet_fecalmet_twocup$`log-contrast coefficients`, coda_glmnet_fecalmet_twocup$taxa.name))
+# view(coda_balance_coeff)
+
+```
+
+
+### 6. Data Frame Manipulations
+
+```{r}
+# Set row names of the data frame coda_balance the taxa names obtained from the regression results
+rownames(coda_balance_coeff_fecalmet_twocup) <- coda_balance_coeff_fecalmet_twocup$taxa.name
+# Set column names of the data frame to "Coefficient_full" and "Species" for clarity.
+colnames(coda_balance_coeff_fecalmet_twocup) <- c("Coefficient_full", "Species")
+# Convert "Coefficient_full" column to numeric type, and create a new column "Coefficient" by rounding "Coefficient_full" to two decimal places
+coda_balance_coeff_fecalmet_twocup$Coefficient_full <- as.numeric(coda_balance_coeff_fecalmet_twocup$Coefficient_full)
+coda_balance_coeff_fecalmet_twocup$Coefficient <-as.numeric(format(round(coda_balance_coeff_fecalmet_twocup$Coefficient_full, 2), nsmall = 2))
+# Determine Positive or Negative Coefficients. Create "PosNeg" column based on whether the coefficient is positive or negative; contains the labels "Positive" or "Negative" accordingly.
+coda_balance_coeff_fecalmet_twocup$PosNeg <- with(coda_balance_coeff_fecalmet_twocup, ifelse(Coefficient > 0, "Positive", "Negative"))
+# Assign Group Labels. The "Group" column is assigned labels "High" or "Low" based on the "PosNeg" column. If the coefficient is positive, it is labeled as "Low"; otherwise, it is labeled as "High".
+coda_balance_coeff_fecalmet_twocup$Group <- with(coda_balance_coeff_fecalmet_twocup, ifelse(PosNeg == "Positive", "Low", "High"))
+coda_balance_coeff_fecalmet_twocup
+```
+
+### 7. Create Data Frame with Samples, Predictions, and Variables. A data frame coda_balances_long_predictions is created to store balance predictions along with sex, group, and sample type information
+
+```{r}
+coda_balances_predictions_fecalmet_twocup <- data.frame(coda_glmnet_fecalmet_twocup$predictions)
+colnames(coda_balances_predictions_fecalmet_twocup) <- c("Balance")
+coda_balances_predictions_fecalmet_twocup$week <- factor(sub_map$week)
+coda_balances_predictions_fecalmet_twocup
+
+
+
+```
+
+### 8. Create Plots. The first one is a boxplot and scatter plot of microbial balances based on treatment and week. The second one is a bar plot showing genera in the selected balance, filtered based on a coefficient threshold.
+# Graph Sample Balances and Species Coefficients (coeff > 0.099)
+
+```{r}
+# Species coefficient plot
+#plot only the genera that are at least 10% of the contribution to the balance
+coda_balance_coeff_10_fecalmet_twocup <- coda_balances_predictions_fecalmet_twocup[(coda_balances_predictions_fecalmet_twocup$Coefficient >= 0.099 | coda_balances_predictions_fecalmet_twocup$Coefficient<= -0.099),]
+coda_balance_coeff_10_fecalmet_twocup
+
+
+```
+
+```{r}
+
+p_sample_genera_twocup_fecalmet <- ggplot(
+  data = coda_balance_coeff_10_fecalmet_twocup, 
+  aes(x = reorder(Metabolites, Coefficient), y = Coefficient)) +
+  geom_bar(stat="identity", width = 0.7, aes(color = Group, fill = Group), show.legend = FALSE) +
+  scale_color_manual(values = c("#332288", "#E066A6")) +
+  scale_fill_manual(values = c("#332288", "#E066A6")) +
+  theme_classic() +
+  labs(title = "Fecal Metabolites") +
+  xlab(" ") + ylab("Log-contrast Coefficient") +
+  theme(text = element_text(size = 15))  +
+  theme(plot.title = element_text(size=20, face = "bold",, hjust = 0.5)) +
+  coord_flip() 
+p_sample_genera_twocup_fecalmet
+
+
+# Balance prediction plot
+p_control_sample_balances_twocup_fecalmet <- ggplot(data = coda_balances_predictions_fecalmet_twocup, aes(x = week, y = Balance, color = week)) +
+  geom_line() +
+#  geom_point() +
+  geom_boxplot() +
+  scale_color_manual(values = c("#332288", "#E066A6"))+
+  scale_fill_manual(values = c("#332288", "#E066A6")) +
+  theme_classic() +
+  labs(title = "",
+       color = "Group") +  # Change legend title
+  xlab(" ") + ylab("Balance Value") +
+  theme(text = element_text(size = 15))  +
+  theme(plot.title = element_text(size=16)) +
+  coord_flip() +
+  theme(legend.position = "none")
+
+p_control_sample_balances_twocup_fecalmet
+
+coda_fecal_twocup <- egg::ggarrange(p_sample_genera_twocup_fecalmet, p_control_sample_balances_twocup_fecalmet, labels = c("", ""), 
+                                          ncol = 1, nrow = 2, heights = c(1,0.25))
+as_ggplot(coda_fecal_twocup)
+
+
+```
+
+
+
+```{r}
+####
+#### simplify taxa names using simplify_taxa-names_count-tables.R
+####
+
+#coda_balance_coeff_control_oc_10p[7,2] <- "Eisenbergiella"
+
+p_sample_genera_twocup_fecalmet <- ggplot(
+  data = coda_balance_coeff_10_fecalmet_twocup, 
+  aes(x = reorder(Genus, Coefficient), y = Coefficient)) +
+  geom_bar(stat="identity", width = 0.7, aes(color = Group, fill = Group), show.legend = FALSE) +
+  scale_color_manual(values = c("#332288", "#E066A6")) +
+  scale_fill_manual(values = c("#332288", "#E066A6")) +
+  theme_classic() +
+  labs(title = "Bacteria") +
+  xlab(" ") + ylab("Log-contrast Coefficient") +
+  theme(text = element_text(size = 15))  +
+  theme(plot.title = element_text(size=20, face = "bold",hjust = 0.5)) +
+  coord_flip() 
+p_sample_genera_twocup_fecalmet
+
+# Balance prediction plot
+p_control_sample_balances_twocup_fecalmet <- ggplot(data = coda_balances_predictions_fecalmet_twocup, aes(x = week, y = Balance, color = week)) +
+  geom_line() +
+  geom_boxplot() +
+  scale_color_manual(values = c("#332288", "#E066A6")) +
+  scale_fill_manual(values = c("#332288", "#E066A6")) +
+  theme_classic() +
+  labs(title = "",
+       color = "Group") +  # Change legend title
+  xlab(" ") + ylab("Balance Value") +
+  theme(text = element_text(size = 15))  +
+  theme(plot.title = element_text(size=16)) +
+  scale_x_discrete(labels = c("0" = "Week 0", "8" = "Week 8")) +
+  coord_flip() +
+  theme(legend.position = "none")
+
+p_control_sample_balances_twocup_fecalmet
+
+p_coda_bacteria_twocup_fecalmet <- egg::ggarrange(p_sample_genera_twocup_fecalmet, p_control_sample_balances_twocup_fecalmet, labels = c("", ""), 
+                                        ncol = 1, nrow = 2, heights = c(1,0.25))
+as_ggplot(p_coda_bacteria_twocup_fecalmet)
+
+```

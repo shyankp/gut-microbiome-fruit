@@ -1,0 +1,615 @@
+---
+title: "Microbiome Fruit Metabolites - Beta Diversity"
+author: "Shyan Polman"
+date: "`r Sys.Date()`" 
+output: html_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+set.seed(123)
+library(vegan)
+library(ggplot2)
+library(ggpubr)
+
+
+```
+
+# Import the fecal metabolite csv
+
+```{r}
+
+fecal_metabolites <- read.csv("~/microbiome-fruit/Hooshmand_LCMP_Feces_Metabolites.csv", header = TRUE) 
+
+# Replace the "." back to "-" in the Sample IDs
+colnames(fecal_metabolites) <- gsub("\\.", "-", colnames(fecal_metabolites))
+
+
+# Use values from first column as row names
+rownames(fecal_metabolites) <- fecal_metabolites[,1]
+
+# Remove first column from data frame
+fecal_metabolites <- fecal_metabolites[,-1]
+
+# Replace NAs with 0
+
+fecal_metabolites[is.na(fecal_metabolites)] <- 0
+
+head(fecal_metabolites)
+
+
+
+# Data is now formatted to proceed with beta diversity analysis
+ 
+```
+
+```{r}
+
+
+transposed_fecal = as.data.frame(t(fecal_metabolites))
+write.csv(transposed_fecal, "transposed_fecal.csv")
+get.cwd()
+
+
+```
+
+# 3. Beta Diversity
+## 3.1 CLR transformation
+### 3.1.1 Replace zeros with pseudocount 0 = 0.001
+```{r}
+fecal_metabolites_zerorep <- fecal_metabolites
+fecal_metabolites_zerorep[fecal_metabolites_zerorep == 0] <- 0.001
+# tail(asv_zerorep)
+
+```
+### 3.1.2 Create function with clr formula to apply transformation (for clr formula, samples = columns)
+```{r}
+clr <- function(x) sweep(log(x), 1, rowMeans(log(x)), "-")
+
+# log(x): calculates the natural logarithm of each element in the matrix x; log() computes the natural logarithm
+# rowMeans(log(x)): computes the mean of each row in the matrix log(x). rowMeans() calculates the row-wise means
+# sweep(log(x), 1, rowMeans(log(x)), "-"): This is where the sweep() function is used - subtracts the row-wise means (obtained from step 2) from each element in the matrix log(x) along the first dimension (rows) - the 1 parameter specifies the dimension along which the operation should be performed, and "-" indicates subtraction
+
+```
+### 3.1.3 Apply clr-transformation function to zero-replaced tables
+```{r}
+transformed_fecal_metabolites <- data.frame(t(clr(t(fecal_metabolites_zerorep))), check.names = F)
+
+```
+### 3.1.4 Subset feature data into Treatment or Day groups if needed
+Assign 'group' with desired subgroup variable (see microbiome-ocp.Rmd)
+```{r}
+
+group <- map_all[,c("SampleID","subject","treatment","week")]
+head(group)
+
+```
+
+```{r}
+# subset clr-transformed data according to 'group', if needed 
+
+# don't need to do because the dataset does not need subsetting 
+# asv_tx <- asv_tx[, colnames(asv_tx) %in% group$SampleID]
+
+```
+### 3.1.5 NMDS
+transpose data frames (samples = rows) and make matrix
+```{r}
+clr_fecalmet_matrix <- as.matrix(t(transformed_fecal_metabolites))
+
+```
+check how many dimensions to use for NMDS
+```{r}
+clr_fecalmet_matrix_nmds_2 = metaMDS(clr_fecalmet_matrix, distance = "euclidean", parallel = 2, k = 2)
+clr_fecalmet_matrix_nmds_3 = metaMDS(clr_fecalmet_matrix, distance = "euclidean", parallel = 2, k = 3)
+clr_fecalmet_matrix_nmds_2$stress
+clr_fecalmet_matrix_nmds_3$stress
+```
+extract NMDS scores
+```{r}
+clr_scores_fecalm = as.data.frame(scores(clr_fecalmet_matrix_nmds_3))
+
+```
+add map data to scores
+```{r}
+clr_scores_fecalm$treatment <- group$treatment
+clr_scores_fecalm$week <- factor(group$week)
+clr_scores_fecalm$subject <- factor(group$subject)
+
+```
+plot
+```{r}
+# extract the stress value from the NMDS model
+clr_scores_fecalm$week = factor(clr_scores_fecalm$week)
+stress_value_2_fecalm = clr_fecalmet_matrix_nmds_2$stress
+stress_value_3_fecalm = clr_fecalmet_matrix_nmds_3$stress
+
+p_NMDS12_clr_fecalm_treat <- ggplot(data = clr_scores_fecalm) +
+  geom_point(aes(x = NMDS1, y = NMDS2, color = treatment)) + 
+  scale_color_manual(values = c( "#332288","#E066A6"),
+                     labels = c("Half-cup", "Two cups")) +
+  stat_ellipse(geom = "polygon",aes(x = NMDS1, y = NMDS2, fill = treatment, color = treatment), alpha = 0.25) +
+  scale_fill_manual(values = c( "#332288","#E066A6"),
+                    labels = c("Half-cup", "Two cups")) +
+  # labs(title= paste0("Euclidean Distances (Stress: ", round(stress_value_2, 2), ")")) +
+  theme_pubclean()+
+  theme(text = element_text(size = 12),
+        plot.title = element_text(face = "bold")) + 
+  facet_grid(~week, labeller = as_labeller(c("0" = "Week 0", "8"= "Week 8"))) +
+  labs(title = "B", subtitle= "Fecal Metabolites",color = "", fill = "")+
+  theme(plot.title = element_text(face = "bold", size = 14, hjust = 0),
+    plot.subtitle = element_text(face = "bold", size = 12, hjust = 0.5))
+p_NMDS12_clr_fecalm_treat
+
+```
+```{r}
+
+# extract the stress value from the NMDS model
+clr_scores_fecalm$week = factor(clr_scores_fecalm$week)
+stress_value_2_fecalm = clr_fecalmet_matrix_nmds_2$stress
+stress_value_3_fecalm = clr_fecalmet_matrix_nmds_3$stress
+
+p_NMDS12_clr_fecalm_treat_2 <- ggplot(data = clr_scores_fecalm) +
+  geom_point(aes(x = NMDS1, y = NMDS2, color = week)) + 
+  scale_color_manual(values = c( "#EC172B","#0DAFB5"),
+                     labels = c("Week 0", "Week 8")) +
+  stat_ellipse(geom = "polygon",aes(x = NMDS1, y = NMDS2, fill = week, color = week), alpha = 0.25) +
+  scale_fill_manual(values = c( "#EC172B","#0DAFB5"),
+                    labels = c("Week 0", "Week 8")) +
+  # labs(title= paste0("Euclidean Distances (Stress: ", round(stress_value_2, 2), ")")) +
+  theme_pubclean()+
+  theme(text = element_text(size = 12),
+        plot.title = element_text(face = "bold")) + 
+  facet_grid(~treatment, labeller = as_labeller(c("H" = "Half cup", "T"= "Two cup"))) +
+  labs(title = "B", subtitle= "Fecal Metabolites",color = "", fill = "")+
+  theme(plot.title = element_text(face = "bold", size = 14, hjust = 0),
+    plot.subtitle = element_text(face = "bold", size = 12, hjust = 0.5))
+p_NMDS12_clr_fecalm_treat_2
+
+```
+Save plots as .png images
+```{r}
+#ggsave(filename = "~/Documents/Programming/Microbiome/microbiome-ocp/data-analyses/results/beta/NMDS/NMDS12-plot_clr-treat.png", plot = p_NMDS12_clr_treat, width = 6, height = 6, dpi = 300)
+
+
+```
+### 3.1.6 PERMANOVA - stats for beta diversity
+Get distances
+```{r}
+dist_fecal_metabolites <- vegdist(as.matrix(t(transformed_fecal_metabolites)), method ='euclidean')
+
+```
+do 10000 permutations
+```{r}
+perm_fecal_metabolites <- adonis2(dist_fecal_metabolites ~ treatment * week, group, permutations = 9999, method="euclidean", by="terms")
+
+# perm_asv <- adonis2(dist_asv ~ treatment * week, group, permutations = 9999, method="euclidean", by="margin", parallel = 4)
+perm_fecal_metabolites
+
+```
+Save PERMANOVA results as .csv file
+```{r}
+write.csv(perm_asv_treat, "~/Documents/Programming/Microbiome/microbiome-ocp/data-analyses/results/beta/PERMANOVA/PERMANOVA-results_asv_clr.csv", row.names = FALSE)
+
+```
+### 3.1.6 Beta-dispersion (distance from centroid of group)
+Make factor vectors for the data
+```{r}
+trt_factor <- factor(group$treatment)
+week_factor <- factor(group$week)
+
+# Calculate beta dispersion for each grouping - this uses the distance values calculated in the PERMANOVA section
+# betadisper() calculates the dispersion for each group, put the distances from betadisper() and 'trt_factor' into a dataframe to graph them
+# permutest() is a permutation-based test of multivariate homogeneity of group dispersions; null hypothesis = no difference in dispersion between groups -- if the groups do not have similar variance (if the p value is high), use nonparametric stats tests on them
+
+```
+
+```{r}
+fecalm_trt_betadist_clr <- betadisper(dist_fecal_metabolites, trt_factor)
+fecalm_distances_trt_clr <- data.frame(fecalm_trt_betadist_clr[['distances']])
+fecalm_distances_trt_clr <- cbind(fecalm_distances_trt_clr, trt_factor)
+colnames(fecalm_distances_trt_clr) <- c('Distance to Centroid', 'Treatment')
+head(fecalm_distances_trt_clr)
+
+fecalm_week_betadist_clr <- betadisper(dist_fecal_metabolites, week_factor)
+fecalm_distances_week_clr <- data.frame(fecalm_week_betadist_clr[['distances']])
+fecalm_distances_week_clr <- cbind(fecalm_distances_week_clr, week_factor)
+colnames(fecalm_distances_week_clr) <- c('Distance to Centroid', 'Week')
+head(fecalm_distances_week_clr)
+
+```
+
+```{r}
+fecalm_test_trt_betadist_clr <- permutest(fecalm_trt_betadist_clr)
+fecalm_test_trt_betadist_clr
+
+fecalm_test_week_betadist_clr <- permutest(fecalm_week_betadist_clr)
+fecalm_test_week_betadist_clr
+
+# Do stats next -- 
+
+```
+### graph beta dispersion
+```{r}
+fecalm_B_trt_clr <- ggboxplot(data = fecalm_distances_trt_clr, x = "Treatment", y = "Distance to Centroid" ) +
+theme_classic() +
+geom_point() +
+labs(title = "Euclidean Distances")
+fecalm_B_trt_clr
+
+fecalm_B_week_clr <- ggboxplot(data = fecalm_distances_week_clr, x = "Week", y = "Distance to Centroid" ) +
+theme_classic() +
+geom_point() +
+labs(title = "Euclidean Distances")
+fecalm_B_week_clr
+
+```
+
+```{r}
+fecalm_betadipsr_figure_clr <- ggarrange(fecalm_B_trt_clr, fecalm_B_week_clr,
+                              labels = c("A", "B"),
+                              ncol = 2, nrow = 1)
+fecalm_betadipsr_figure_clr
+
+```
+
+
+
+```{r}
+
+# Combine treatment and week into a new factor for use in betadisper
+group$treatmentweek <- paste(group$treatment, group$week, sep = " & ")
+
+# Create combined factor
+combined_factor <- factor(group$treatmentweek)
+
+# Apply betadisper using the combined factor
+fecalm_combined_betadist_clr <- betadisper(dist_fecal_metabolites, combined_factor)
+
+# Calculate the distances for each combination of Day and Diet
+fecalm_distances_combined_clr <- data.frame(SampleID = rownames(fecalm_combined_betadist_clr$vectors), 
+                                     Distance_to_Centroid = fecalm_combined_betadist_clr[['distances']])
+
+# Merge with the original group data to get the Day, Diet, and combined factor info
+fecalm_distances_combined_clr <- merge(fecalm_distances_combined_clr, group[, c("SampleID", "treatment", "week", "treatmentweek")], by = "SampleID", all.x = TRUE)
+
+# View the result
+head(fecalm_distances_combined_clr)
+
+
+
+```
+
+
+
+
+```{r}
+
+# Now we can graph
+fecalm_distances_combined_clr$treatmentweek <- factor(fecalm_distances_combined_clr$treatmentweek)
+fecalm_combined_diet_clr <- ggboxplot(data = fecalm_distances_combined_clr, x = "treatmentweek", y = "Distance_to_Centroid" ) +
+theme_classic() +
+geom_point() +
+labs(title = "Euclidean Distances")
+fecalm_combined_diet_clr
+
+
+
+```
+
+
+
+
+# Import the plasma metabolite csv
+
+```{r}
+
+plasma_metabolites <- read.csv("~/microbiome-fruit/Hooshmand_LCMP_Plasma_Metabolites.csv", header = TRUE) 
+
+# Replace the "." back to "-" in the Sample IDs
+colnames(plasma_metabolites) <- gsub("\\.", "-", colnames(plasma_metabolites))
+
+
+# Use values from first column as row names
+rownames(plasma_metabolites) <- plasma_metabolites[,1]
+
+# Remove first column from data frame
+plasma_metabolites <- plasma_metabolites[,-1]
+
+# Replace NAs with 0
+
+plasma_metabolites[is.na(plasma_metabolites)] <- 0
+
+head(plasma_metabolites)
+
+# Data is now formatted to proceed with beta diversity analysis
+ 
+```
+
+```{r}
+
+transposed_plasma = as.data.frame(t(plasma_metabolites))
+write.csv(transposed_plasma, "transposed_plasma.csv")
+
+```
+
+
+
+## 3.2 CLR transformation
+### 3.2.1 Replace zeros with pseudocount 0 = 0.001
+```{r}
+plasma_metabolites_zerorep <- plasma_metabolites
+plasma_metabolites_zerorep[plasma_metabolites_zerorep == 0] <- 0.001
+# tail(asv_zerorep)
+
+```
+### 3.2.2 Create function with clr formula to apply transformation (for clr formula, samples = columns)
+```{r}
+clr <- function(x) sweep(log(x), 1, rowMeans(log(x)), "-")
+
+# log(x): calculates the natural logarithm of each element in the matrix x; log() computes the natural logarithm
+# rowMeans(log(x)): computes the mean of each row in the matrix log(x). rowMeans() calculates the row-wise means
+# sweep(log(x), 1, rowMeans(log(x)), "-"): This is where the sweep() function is used - subtracts the row-wise means (obtained from step 2) from each element in the matrix log(x) along the first dimension (rows) - the 1 parameter specifies the dimension along which the operation should be performed, and "-" indicates subtraction
+
+```
+### 3.2.3 Apply clr-transformation function to zero-replaced tables
+```{r}
+transformed_plasma_metabolites <- data.frame(t(clr(t(plasma_metabolites_zerorep))), check.names = F)
+
+```
+### 3.2.4 Subset feature data into Treatment or Day groups if needed
+Assign 'group' with desired subgroup variable (see microbiome-ocp.Rmd)
+```{r}
+
+group <- map_all[,c("SampleID","subject","treatment","week")]
+head(group)
+
+```
+
+```{r}
+# subset clr-transformed data according to 'group', if needed 
+
+# don't need to do because the dataset does not need subsetting 
+# asv_tx <- asv_tx[, colnames(asv_tx) %in% group$SampleID]
+
+```
+### 3.2.5 NMDS
+transpose data frames (samples = rows) and make matrix
+```{r}
+clr_plasmamet_matrix <- as.matrix(t(transformed_plasma_metabolites))
+
+```
+check how many dimensions to use for NMDS
+```{r}
+clr_plasmamet_matrix_nmds_2 = metaMDS(clr_plasmamet_matrix, distance = "euclidean", parallel = 2, k = 2)
+clr_plasmamet_matrix_nmds_3 = metaMDS(clr_plasmamet_matrix, distance = "euclidean", parallel = 2, k = 3)
+clr_plasmamet_matrix_nmds_2$stress
+clr_plasmamet_matrix_nmds_3$stress
+```
+extract NMDS scores
+```{r}
+clr_scores_plasmam = as.data.frame(scores(clr_plasmamet_matrix_nmds_3))
+
+```
+add map data to scores
+```{r}
+clr_scores_plasmam$treatment <- group$treatment
+clr_scores_plasmam$week <- factor(group$week)
+clr_scores_plasmam$subject <- factor(group$subject)
+
+```
+plot
+```{r}
+# extract the stress value from the NMDS model
+stress_value_2_plasmam = clr_plasmamet_matrix_nmds_2$stress
+stress_value_3_plasmam = clr_plasmamet_matrix_nmds_3$stress
+
+p_NMDS12_clr_plasmam_treat <- ggplot(data = clr_scores_plasmam) +
+  geom_point(aes(x = NMDS1, y = NMDS2, color = treatment)) + 
+  scale_color_manual(values = c( "#332288","#E066A6"),
+                     labels = c("Half-cup", "Two cups")) +
+  stat_ellipse(geom = "polygon",aes(x = NMDS1, y = NMDS2, fill = treatment, color = treatment), alpha = 0.25) +
+  scale_fill_manual(values = c( "#332288","#E066A6"),
+                    labels = c("Half-cup", "Two cups")) +
+  # labs(title= paste0("Euclidean Distances (Stress: ", round(stress_value_2, 2), ")")) +
+  theme_pubclean()+
+  theme(text = element_text(size = 12),
+        plot.title = element_text(face = "bold")) + 
+  facet_grid(~week, labeller = as_labeller(c("0" = "Week 0", "8"= "Week 8"))) +
+  labs(title = "C", subtitle= "Plasma Metabolites",color = "", fill = "")+
+  theme(plot.title = element_text(face = "bold", size = 14, hjust = 0),
+    plot.subtitle = element_text(face = "bold", size = 12, hjust = 0.5))
+
+p_NMDS12_clr_plasmam_treat
+
+```
+```{r}
+# extract the stress value from the NMDS model
+clr_scores_plasmam$week = factor(clr_scores_plasmam$week)
+stress_value_2_plasmam = clr_plasmamet_matrix_nmds_2$stress
+stress_value_3_plasmam = clr_plasmamet_matrix_nmds_3$stress
+
+p_NMDS12_clr_plasmam_treat_2 <- ggplot(data = clr_scores_plasmam) +
+  geom_point(aes(x = NMDS1, y = NMDS2, color = week)) + 
+  scale_color_manual(values = c( "#EC172B","#0DAFB5"),
+                     labels = c("Week 0", "Week 8")) +
+  stat_ellipse(geom = "polygon",aes(x = NMDS1, y = NMDS2, fill = week, color = week), alpha = 0.25) +
+  scale_fill_manual(values = c( "#EC172B","#0DAFB5"),
+                    labels = c("Week 0", "Week 8")) +
+  # labs(title= paste0("Euclidean Distances (Stress: ", round(stress_value_2, 2), ")")) +
+  theme_pubclean()+
+  theme(text = element_text(size = 12),
+        plot.title = element_text(face = "bold")) + 
+  facet_grid(~treatment, labeller = as_labeller(c("H" = "Half cup", "T"= "Two cup"))) +
+  labs(title = "C", subtitle= "Plasma Metabolites",color = "", fill = "")+
+  theme(plot.title = element_text(face = "bold", size = 14, hjust = 0),
+    plot.subtitle = element_text(face = "bold", size = 12, hjust = 0.5))
+p_NMDS12_clr_plasmam_treat_2
+
+```
+
+
+
+Save plots as .png images
+```{r}
+#ggsave(filename = "~/Documents/Programming/Microbiome/microbiome-ocp/data-analyses/results/beta/NMDS/NMDS12-plot_clr-treat.png", plot = p_NMDS12_clr_treat, width = 6, height = 6, dpi = 300)
+
+
+```
+### 3.2.6 PERMANOVA - stats for beta diversity
+Get distances
+```{r}
+dist_plasma_metabolites <- vegdist(as.matrix(t(transformed_plasma_metabolites)), method ='euclidean')
+
+```
+do 10000 permutations
+```{r}
+perm_plasma_metabolites <- adonis2(dist_plasma_metabolites ~ treatment * week, group, permutations = 9999, method="euclidean", by="terms")
+
+# perm_asv <- adonis2(dist_asv ~ treatment * week, group, permutations = 9999, method="euclidean", by="margin", parallel = 4)
+perm_plasma_metabolites
+
+```
+Save PERMANOVA results as .csv file
+```{r}
+write.csv(perm_asv_treat, "~/Documents/Programming/Microbiome/microbiome-ocp/data-analyses/results/beta/PERMANOVA/PERMANOVA-results_asv_clr.csv", row.names = FALSE)
+
+```
+### 3.2.6 Beta-dispersion (distance from centroid of group)
+Make factor vectors for the data
+```{r}
+trt_factor <- factor(group$treatment)
+week_factor <- factor(group$week)
+
+# Calculate beta dispersion for each grouping - this uses the distance values calculated in the PERMANOVA section
+# betadisper() calculates the dispersion for each group, put the distances from betadisper() and 'trt_factor' into a dataframe to graph them
+# permutest() is a permutation-based test of multivariate homogeneity of group dispersions; null hypothesis = no difference in dispersion between groups -- if the groups do not have similar variance (if the p value is high), use nonparametric stats tests on them
+
+```
+
+```{r}
+plasmam_trt_betadist_clr <- betadisper(dist_plasma_metabolites, trt_factor)
+plasmam_distances_trt_clr <- data.frame(plasmam_trt_betadist_clr[['distances']])
+plasmam_distances_trt_clr <- cbind(plasmam_distances_trt_clr, trt_factor)
+colnames(plasmam_distances_trt_clr) <- c('Distance to Centroid', 'Treatment')
+head(plasmam_distances_trt_clr)
+
+plasmam_week_betadist_clr <- betadisper(dist_plasma_metabolites, week_factor)
+plasmam_distances_week_clr <- data.frame(plasmam_week_betadist_clr[['distances']])
+plasmam_distances_week_clr <- cbind(plasmam_distances_week_clr, week_factor)
+colnames(plasmam_distances_week_clr) <- c('Distance to Centroid', 'Week')
+head(plasmam_distances_week_clr)
+
+```
+
+```{r}
+plasmam_test_trt_betadist_clr <- permutest(plasmam_trt_betadist_clr)
+plasmam_test_trt_betadist_clr
+
+plasmam_test_week_betadist_clr <- permutest(plasmam_week_betadist_clr)
+plasmam_test_week_betadist_clr
+
+# Do stats next -- 
+
+```
+### graph beta dispersion
+```{r}
+plasmam_B_trt_clr <- ggboxplot(data = plasmam_distances_trt_clr, x = "Treatment", y = "Distance to Centroid" ) +
+theme_classic() +
+geom_point() +
+labs(title = "Euclidean Distances")
+plasmam_B_trt_clr
+
+plasmam_B_week_clr <- ggboxplot(data = plasmam_distances_week_clr, x = "Week", y = "Distance to Centroid" ) +
+theme_classic() +
+geom_point() +
+labs(title = "Euclidean Distances")
+plasmam_B_week_clr
+
+```
+
+```{r}
+plasmam_betadipsr_figure_clr <- ggarrange(plasmam_B_trt_clr, plasmam_B_week_clr,
+                              labels = c("A", "B"),
+                              ncol = 2, nrow = 1)
+plasmam_betadipsr_figure_clr
+
+```
+
+
+
+```{r}
+
+# Combine treatment and week into a new factor for use in betadisper
+group$treatmentweek <- paste(group$treatment, group$week, sep = " & ")
+
+# Create combined factor
+combined_factor <- factor(group$treatmentweek)
+
+# Apply betadisper using the combined factor
+plasmam_combined_betadist_clr <- betadisper(dist_plasma_metabolites, combined_factor)
+
+# Calculate the distances for each combination of Day and Diet
+plasmam_distances_combined_clr <- data.frame(SampleID = rownames(plasmam_combined_betadist_clr$vectors), 
+                                     Distance_to_Centroid = plasmam_combined_betadist_clr[['distances']])
+
+# Merge with the original group data to get the Day, Diet, and combined factor info
+plasmam_distances_combined_clr <- merge(plasmam_distances_combined_clr, group[, c("SampleID", "treatment", "week", "treatmentweek")], by = "SampleID", all.x = TRUE)
+
+# View the result
+head(plasmam_distances_combined_clr)
+
+
+
+```
+
+
+
+
+```{r}
+
+# Now we can graph
+plasmam_distances_combined_clr$treatmentweek <- factor(plasmam_distances_combined_clr$treatmentweek)
+plasmam_combined_diet_clr <- ggboxplot(data = plasmam_distances_combined_clr, x = "treatmentweek", y = "Distance_to_Centroid" ) +
+theme_classic() +
+geom_point() +
+labs(title = "Euclidean Distances")
+plasmam_combined_diet_clr
+
+
+
+```
+
+
+
+
+
+### Saving clr transformed data for PyBootNet
+
+```{r}
+
+transposed_clr_fecal_metabolites <- data.frame(clr(t(fecal_metabolites_zerorep)), check.names = F)
+
+transposed_clr_fm_save <- transposed_clr_fecal_metabolites
+SampleIDs <- rownames(transposed_clr_fm_save)
+rownames(transposed_clr_fm_save) <- NULL
+transposed_clr_fm_save <- cbind(SampleID,transposed_clr_fm_save)
+
+
+write.csv(transposed_clr_fm_save,"transformed_fecal_metabolites.csv", row.names = FALSE)
+
+
+
+transposed_clr_plasma_metabolites <- data.frame(clr(t(plasma_metabolites_zerorep)), check.names = F)
+
+transposed_clr_plasma_save <- transposed_clr_plasma_metabolites
+SampleIDs <- rownames(transposed_clr_plasma_save)
+rownames(transposed_clr_plasma_save) <- NULL
+transposed_clr_plasma_save <- cbind(SampleID,transposed_clr_plasma_save)
+
+
+write.csv(transposed_clr_plasma_save,"transformed_plasma_metabolites.csv", row.names = FALSE)
+
+
+
+```
+

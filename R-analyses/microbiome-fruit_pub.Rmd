@@ -1,0 +1,196 @@
+---
+title: "Microbiome-OC"
+author: "Fernanda Terrazas"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+```{r Setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+Load Packages
+```{r Load Packages}
+my_packages <- c("FSA", "ggplot2","tidyverse", "corrplot", "ggpubr", "psych","vegan", "nlme", "metap", "caTools", "randomForest", "ROCR", "car", "ape", "tidyr","gridExtra", "lme4") ## "phyloseq"
+lapply(my_packages, library, character.only = TRUE)
+
+library("ape")
+
+
+```
+
+
+Check for RStudio and packages versions
+```{r Load Packages}
+# Check RStudio version
+library(rstudioapi)
+rstudioapi::versionInfo()$version
+
+# Check R packages version
+packageVersion("coda4microbiome")
+packageVersion("ggplot2")
+packageVersion("vegan")
+packageVersion("lme4")
+
+```
+Set working directory
+```{r Load Packages}
+setwd("~/microbiome-fruit/data-analyses")
+
+```
+SampleID = Unique sample identifier
+Treatment = T (two cups of fruit), H (half cup or less of fruit)
+Week = 1 (day 1 of cycle), 21 (day 21 of cycle)
+Age (years)
+Gender = Male or Female
+Weight (kg) = from DXA bone density scan (dual-energy x-ray absorption)
+Calculated BMI 
+
+# 1. Import data
+## 1.1 Import Metadata
+```{r}
+getwd()
+# import file
+map_all <- read.csv("metadata-fruit-data-analysis.tsv", header = TRUE, sep = "\t") 
+
+```
+## 1.2 ASV table
+```{r}
+asv_16S_all <- read.delim("~/microbiome-fruit/ASVs/zerofilteredOTU/ASV_table.zerofiltered.tsv", header = TRUE, row.names = 1, check.names = F)
+
+head(asv_16S_all)
+
+#asv_16S <- asv_16S_all[,!(colnames(asv_16S_all) %in% remove_id)]
+#head(asv_16S)
+
+```
+
+# Filtering ASVs that are only present in more than 20% of samples
+
+```{r}
+
+# Convert to presence/absence
+pres_or_abs <- asv_16S_all > 0
+
+# Prevalence is how many samples each genus is found in
+prevalence <- rowSums(pres_or_abs) / ncol(asv_16S_all)
+
+# Filter genera present in more than 20% of samples (gives the names of the ASV)
+genera_more_20 <- rownames(asv_16S_all)[prevalence > 0.2]
+
+print(genera_more_20)
+
+# Subset ASV table to keep only prevalent genera
+filtered_asv_20 <- asv_16S_all[prevalence > 0.2, ]
+
+head(filtered_asv_20)
+
+```
+
+
+## 1.3 Import Genus Table
+```{r}
+genus_all <- read.delim("~/microbiome-fruit/ASVs/zerofilteredOTU/biom_table_genus/genus_table_from_biom.tsv", header = TRUE, row.names = 1, check.names = F,skip=1)
+
+
+head(genus_all)
+
+```
+## 1.3 Import Species Table
+```{r}
+species_all <- read.delim("~/microbiome-fruit/ASVs/zerofilteredOTU/biom_table_species/species_table_from_biom.tsv", header = TRUE, row.names = 1, check.names = F,skip=1)
+
+head(species_all)
+
+```
+## 1.4 Import Alpha Diversity data
+```{r}
+# alpha_diversity_all <- read.csv("alpha_diversity-zerofiltered.csv", header = TRUE)
+shannon <- read.delim("~/microbiome-fruit/diversity/zero-filtered_10k/exported-core-metrics-tables/shannon_vector_alpha-diversity.tsv", header = TRUE)
+observed_features <- read.delim("~/microbiome-fruit/diversity/zero-filtered_10k/exported-core-metrics-tables/observed_features_alpha-diversity.tsv", header = TRUE)
+faith_pd <- read.delim("~/microbiome-fruit/diversity/zero-filtered_10k/exported-core-metrics-tables/faith_pd_alpha-diversity.tsv", header = TRUE)
+pielou_evenness <- read.delim("~/microbiome-fruit/diversity/zero-filtered_10k/exported-core-metrics-tables/evenness_alpha-diversity.tsv", header = TRUE)
+
+# Rename the sample ID column in each data frame so it matches on all data frames
+colnames(shannon)[1] <- "SampleID"
+colnames(observed_features)[1] <- "SampleID"
+colnames(faith_pd)[1] <- "SampleID"
+colnames(pielou_evenness)[1] <- "SampleID"
+
+# Merge the data frames
+alpha_diversity_all <- merge(shannon, observed_features, by = "SampleID")
+alpha_diversity_all <- merge(alpha_diversity_all, faith_pd, by = "SampleID")
+alpha_diversity_all <- merge(alpha_diversity_all, pielou_evenness, by = "SampleID")
+
+# only for consistency:
+alpha_diversity <- alpha_diversity_all
+
+```
+## 1.5 Import Unifrac Matrices
+exported from qiime2
+```{r}
+weighted_unfiltered <- read.csv("~/microbiome-fruit/diversity/zero-filtered_10k/exported-core-metrics-tables/weighted_unifrac_distance-matrix.tsv", header = TRUE, row.names = 1, sep = "\t", check.names = F)
+head(weighted_unfiltered)
+
+```
+
+```{r}
+unweighted_unfiltered <- read.csv("~/microbiome-fruit/diversity/zero-filtered_10k/exported-core-metrics-tables/unweighted_unifrac_distance-matrix.tsv", header = TRUE, row.names = 1, sep = "\t", check.names = F)
+head(unweighted_unfiltered)
+
+```
+check dimensions
+```{r}
+dim(weighted_unfiltered)
+dim(unweighted_unfiltered)
+
+```
+## 1.6 Import taxonomy table into R and format to work with phyloseq
+```{r}
+# Read the taxonomy table (assuming it's in a CSV or TSV format):
+taxonomy_raw <- read.table("~/microbiome-fruit/taxonomy_export/taxonomy.tsv", stringsAsFactors = FALSE, header = TRUE, sep = "\t")
+head(taxonomy_raw)
+
+# Remove prefixes from Taxon names
+taxonomy_raw$Taxon <- gsub("d__|p__|c__|o__|f__|g__|s__", "", taxonomy_raw$Taxon)
+head(taxonomy_raw)
+
+```
+Split the taxonomic ranks and create a new taxonomy table:
+```{r}
+# # Convert the 'Taxon' column to a character before splitting (may not need to do this)
+# taxonomy_raw$Taxon <- as.character(taxonomy_raw$Taxon)
+
+# Split the "Taxon" column into taxonomic ranks
+tax_ranks <- strsplit(taxonomy_raw$Taxon, "; ")
+
+# Create a data frame with separate columns for each taxonomic rank
+tax_table <- do.call(rbind, lapply(tax_ranks, function(x) {
+  c(Domain = x[1], Phylum = x[2], Class = x[3], Order = x[4], Family = x[5], Genus = x[6], Species = x[7])
+}))
+
+# Set the row names of the tax_table to match the ASV/OTU names
+rownames(tax_table) <- taxonomy_raw$Feature.ID
+head(tax_table)
+
+```
+## 1.7 Import phylogenetic tree into R
+```{r}
+# Use read.tree from the 'ape' package to import Newick files
+phylo_tree_rooted <- read.tree("~/microbiome-fruit/phylogeny/exported-rooted-tree/rooted-tree.nwk")
+phylo_tree_unrooted <- read.tree("~/microbiome-fruit/phylogeny/exported-unrooted-tree/unrooted-tree.nwk")
+
+```
+## 1.8 Subset metadata into Treatment and Cycle day groups
+```{r}
+# Check number of samples per group
+table(map_all$treatment, map_all$week)
+
+# Create each group to use for alpha diversity and subsequent analyses
+
+# Subset the columns - treatment and week (time point)
+group  <- subset(map_all, treatment %in% c("T", "H") & week %in% c("0","8"))
+group <- map_all[, c("treatment", "week")]
+table(group$treatment, group$week)
+view(group)
+
+```

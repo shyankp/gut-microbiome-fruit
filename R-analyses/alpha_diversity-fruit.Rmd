@@ -1,0 +1,234 @@
+---
+title: "Microbiome Fruit - Alpha Diversity"
+author: "Shyan Polman"
+date: "`r Sys.Date()`"
+output: html_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+set.seed(123)
+
+```
+
+```{r}
+
+shapiro.test(alpha_diversity$shannon_entropy)
+shapiro.test(alpha_diversity$observed_features)
+shapiro.test(alpha_diversity$faith_pd)
+shapiro.test(alpha_diversity$pielou_evenness)
+
+
+```
+
+
+
+# 2. Alpha Diversity
+## 2.1 log-transform alpha diversity metrics
+```{r}
+alpha_diversity_tx <- alpha_diversity
+head(alpha_diversity_tx)
+alpha_diversity_tx[, 2:5] <- sqrt(alpha_diversity_tx[, 2:5])
+head(alpha_diversity_tx)
+
+shapiro.test(alpha_diversity_tx$shannon_entropy)
+shapiro.test(alpha_diversity_tx$observed_features)
+shapiro.test(alpha_diversity_tx$faith_pd)
+shapiro.test(alpha_diversity_tx$pielou_evenness)
+
+# Transform shannon entropy and pielou eveness with different method
+
+alpha_diversity_tx[,2] <- log(alpha_diversity_tx[,2])
+
+
+
+
+
+```
+Assign data subset to "group" variable to use for downstream analyses
+```{r}
+
+head(group)
+
+```
+### Add metadata to alpha diversity data
+```{r}
+# Merge alpha diversity data with assigned group
+
+map <- read.csv("~/microbiome-fruit/data-analyses/metadata-fruit-data-analysis.tsv", header = TRUE, sep = "\t")
+group <- map[, c("SampleID","subject","treatment", "week")]
+
+
+alpha_merged <- merge(alpha_diversity_tx, group, by = "SampleID")
+
+```
+### Linear Model -- Effect of **Treatment * Week** on shannon_entropy, observed_features, faith_pd", pielou_evenness
+```{r}
+library(MuMIn)
+library(lme4)
+library(car)
+
+# Fit model for each alpha diversity metric, where Treatment is the group variable and 1|SubjectID specifies the random effect
+lmer_shannon <- lmer(alpha_merged$shannon_entropy ~ treatment * week + (1|subject), data = alpha_merged)
+summary(lmer_shannon)
+options(contrasts = c("contr.sum","contr.poly")) #change contrasts and refit model
+lmer_shannon <- lmer(alpha_merged$shannon_entropy ~ treatment * week + (1|subject), data = alpha_merged)
+lmer_shannon_anova <- Anova(lmer_shannon, type = "III")
+lmer_shannon_anova
+options(contrasts = c("contr.treatment","contr.poly")) #change contrasts back
+r.squaredGLMM(lmer_shannon)
+
+lmer_obsft <- lmer(alpha_merged$observed_features ~ treatment * week + (1|subject), data = alpha_merged)
+summary(lmer_obsft)
+options(contrasts = c("contr.sum","contr.poly")) #change contrasts and refit
+lmer_obsft <- lmer(alpha_merged$observed_features ~ treatment * week + (1|subject), data = alpha_merged)
+lmer_obsft_anova <- Anova(lmer_obsft, type = "III")
+lmer_obsft_anova
+options(contrasts = c("contr.treatment","contr.poly")) #change contrasts back
+r.squaredGLMM(lmer_obsft)
+
+
+lmer_faith <- lmer(alpha_merged$faith_pd ~ treatment * week + (1|subject), data = alpha_merged)
+summary(lmer_faith)
+options(contrasts = c("contr.sum","contr.poly")) #change contrasts and refit model
+lmer_faith <- lmer(alpha_merged$faith_pd ~ treatment * week + (1|subject), data = alpha_merged)
+lmer_faith_anova <- Anova(lmer_faith, type = "III")
+lmer_faith_anova
+options(contrasts = c("contr.treatment","contr.poly")) #change contrasts back
+r.squaredGLMM(lmer_faith)
+
+
+lmer_pielou <- lmer(alpha_merged$pielou_evenness ~ treatment * week + (1|subject), data = alpha_merged)
+summary(lmer_pielou)
+options(contrasts = c("contr.sum","contr.poly")) #change contrasts and refit model
+lmer_pielou <- lmer(alpha_merged$pielou_evenness ~ treatment * week + (1|subject), data = alpha_merged)
+lmer_pielou_anova <- Anova(lmer_pielou, type = "III")
+lmer_pielou_anova
+options(contrasts = c("contr.treatment","contr.poly")) #change contrasts back
+r.squaredGLMM(lmer_pielou)
+
+
+```
+Combine lme results for all alpha diversity metrics in a single df to save
+```{r}
+lmer_shannon_df <- lmer_shannon_anova
+lmer_obsft_df <- lmer_obsft_anova
+lmer_faith_df <- lmer_faith_anova
+lmer_pielou_df <- lmer_pielou_anova
+
+```
+Save lme model results as .csv file
+```{r}
+write.csv(lmer_shannon_df, "~/Documents/Programming/Microbiome/microbiome-fruit/data-analyses/alpha-results_lmer_shannon_df.csv", row.names = FALSE)
+
+write.csv(lmer_obsft_df, "~/Documents/Programming/Microbiome/microbiome-fruit/data-analyses/results/alpha/alpha-results_lmer_obsft_df.csv", row.names = FALSE)
+
+write.csv(lmer_faith_df, "~/Documents/Programming/Microbiome/microbiome-fruit/data-analyses/results/alpha/alpha-results_lmer_faith_df.csv", row.names = FALSE)
+
+write.csv(lmer_pielou_df, "~/Documents/Programming/Microbiome/microbiome-fruit/data-analyses/results/alpha/alpha-results_lmer_pielou_df.csv", row.names = FALSE)
+
+```
+### Check assumptions of the model **Treatment & Day**
+
+#### 1. Linearity - the relationship between the dependent variable and the fixed effects should be linear.
+                  - the relationship between predictors and the dependent variable is linear.
+```{r}
+par(mfrow = c(2, 2))
+
+plot(resid(lmer_shannon), alpha_merged$shannon_entropy)
+plot(resid(lmer_obsft), alpha_merged$observed_features)
+plot(resid(lmer_faith), alpha_merged$faith_pd)
+plot(resid(lmer_pielou), alpha_merged$pielou_evenness)
+
+```
+#### 2. Homoscedasticity - the variance of residuals should be constant across the range of fitted values.
+                         - the residuals have constant variance.
+```{r}
+# Plot residuals vs. fitted values
+plot(resid(lmer_shannon) ~ fitted(lmer_shannon)) # or plot(lmer_shannon)
+plot(resid(lmer_obsft) ~ fitted(lmer_obsft))
+plot(resid(lmer_faith) ~ fitted(lmer_faith))
+plot(resid(lmer_pielou) ~ fitted(lmer_pielou))
+
+```
+#### Normality - the residuals of the model are normally distributed
+```{r}
+# id= identifies values that may be exerting undue influence on the model (i.e. outliers)
+qqmath(lmer_shannon, id=0.05)
+qqmath(lmer_obsft, id=0.05)
+qqmath(lmer_faith, id=0.05)
+qqmath(lmer_pielou, id=0.05)
+
+```
+#### 5. No multicollinearity - the predictor variables are not perfectly correlated with each other.
+
+A VIF greater than 5 or 10 often indicates problematic multicollinearity. In mixed models, you can calculate VIF for the fixed effects only, because the random effects are assumed to be uncorrelated with the fixed effects and with each other:
+```{r}
+library(car)
+
+vif(lmer_shannon)
+vif(lmer_obsft)
+vif(lmer_faith)
+vif(lmer_pielou)
+
+```
+
+```{r}
+# Reset the mfrow parameter to default
+par(mfrow = c(1, 1))
+
+```
+
+### Plot alpha diversity
+
+```{r}
+# merge alpha diversity data with all data
+alpha_all <- merge(alpha_diversity_tx, map_all, by = "SampleID")
+
+# Create a data frame for plotting
+alpha_plot_data <- data.frame(
+  Metric = rep(c("Shannon Entropy", "Observed Features", "Faith PD", "Pielou Evenness"), each = nrow(map_all)),
+  Value = c(alpha_all$shannon_entropy, alpha_all$observed_features, alpha_all$faith_pd, alpha_all$pielou_evenness),
+  Treatment = rep(alpha_all$treatment, times = 4),
+  Week = rep(alpha_all$week, times = 4)
+)
+head(alpha_plot_data)
+
+```
+
+```{r}
+
+p_alpha_treat <- ggplot(alpha_plot_data, aes(x = Treatment, y = Value, fill = Treatment)) +
+  geom_boxplot(colour = "black") +
+  scale_fill_manual(values = c("#907df0", "#E066A6"),
+                    labels = c("H" = "Half cup", "T" = "Two cups")) +
+  scale_x_discrete(labels=c("Half cup" = "Half cup", "Two cups" = "Two cups")) +
+  facet_grid(Metric ~ Week, scales = "free_y", 
+             labeller = labeller(Metric = c("Shannon Entropy" = "SE", 
+                                            "Observed Features" = "OF", 
+                                            "Faith PD" = "FD", 
+                                            "Pielou Evenness" = "PE"),
+                                  Week = c("0" = "Week 0", "8" = "Week 8"))) + # manually changes group data names
+  theme(aspect.ratio = 0.5,
+        strip.text.x = element_text(size = 10),  # Adjust size for x-axis facet labels
+        strip.text.y = element_text(size = 10),  # Adjust size for y-axis facet labels
+        axis.text.x = element_text(size = 12),     # Increase x-axis tick label text size
+        axis.text.y = element_text(size = 10)) +
+  labs(fill = "",  # Change legend title
+       x = "", 
+       y = "") +
+  # xlab("") + ylab("") +
+  ggtitle("") +
+  theme_pubclean()
+
+p_alpha_treat
+
+```
+
+
+
+Save plots as .png images
+```{r}
+ggsave(filename = "~/Documents/Programming/Microbiome/microbiome-ocp/data-analyses/results/alpha/alpha-treatment-plot.png", plot = p_alpha_treat, width = 8, height = 6, dpi = 300)
+
+```
+

@@ -1,0 +1,420 @@
+---
+title: "coda4microbiome-fruit"
+author: "Shyan Polman"
+date: "`r Sys.Date()`"
+output: html_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+Set working directory
+```{r}
+
+setwd("/Users/shyanpolman/microbiome-fruit/data-analyses")
+getwd()
+
+```
+Load coda4microbiome package
+```{r Load Packages}
+library(coda4microbiome)
+library(ggplot2)
+
+```
+
+```{r}
+# to reproduce the results
+set.seed(123)
+
+```
+### Run coda4microbiome algorithm
+
+### 1. Create a Transposed Data Frame. A transposed data frame x_species is created from the original data frame species
+
+### 2. Factorize the half-cup/two-cup treatment groups. Create a factor variable y vector  by extracting treatment information for 'Half-cup' & 'Two-cup' subjects from the map_all data.
+
+```{r}
+
+#1
+
+
+x_species <- data.frame(t(species_all), check.names = T)
+
+# Reorder x_species rows to match map_all SampleID order
+x_species_ordered <- x_species[map_all$SampleID, ]
+
+x_time = map_all$week;
+
+subject_id = map_all$SampleID;
+
+#2 
+y = factor(map_all$treatment);
+
+ini_time = 0;
+
+end_time = 8;
+
+
+# checking the levels
+
+# levels(factor(map_all$treatment))
+
+# Half-cup is the baseline 
+
+all(rownames(x_species) == map_all$SampleID)
+
+
+```
+
+### 3. Apply regression. Regression is applied using the coda_glmnet_longitudinal function to identify important taxa in 'Half-cup' & 'Two-cup' treatments.
+```{r}
+
+set.seed(123)
+
+
+
+coda_glmnet_long <-coda_glmnet_longitudinal(x_species_ordered ,y, x_time, subject_id, ini_time, end_time, lambda="lambda.min",nfolds=5)
+
+
+
+```
+
+
+### 4. Extract Accuracy Measure. The apparent Area Under the Curve (AUC) is extracted as an accuracy measure from the regression results.
+
+```{r}
+coda_glmnet_long$taxa.num
+
+
+coda_glmnet_long$taxa.name
+
+
+coda_glmnet_long$`log-contrast coefficients`
+
+
+
+```
+
+
+
+
+
+```{r}
+
+coda_glmnet_long$`apparent AUC`
+coda_glmnet_long$`predictions plot`
+coda_glmnet_long$`signature plot`
+
+
+```
+
+
+
+
+
+
+### 5. Create a Data Frame with Genera and Coefficients. A data frame coda_balance_coeff_control_ocis created to store genera names and their corresponding coefficients from the regression
+```{r}
+
+coda_balance_coeff <- data.frame(cbind(coda_glmnet_long$`log-contrast coefficients`, coda_glmnet_long$taxa.name))
+# view(coda_balance_coeff)
+
+```
+
+
+### 6. Data Frame Manipulations
+
+```{r}
+# Set row names of the data frame coda_balance the taxa names obtained from the regression results
+rownames(coda_balance_coeff) <- coda_balance_coeff$taxa.name
+# Set column names of the data frame to "Coefficient_full" and "Species" for clarity.
+colnames(coda_balance_coeff) <- c("Coefficient_full", "Species")
+# Convert "Coefficient_full" column to numeric type, and create a new column "Coefficient" by rounding "Coefficient_full" to two decimal places
+coda_balance_coeff$Coefficient_full <- as.numeric(coda_balance_coeff$Coefficient_full)
+coda_balance_coeff$Coefficient <-as.numeric(format(round(coda_balance_coeff$Coefficient_full, 2), nsmall = 2))
+# Determine Positive or Negative Coefficients. Create "PosNeg" column based on whether the coefficient is positive or negative; contains the labels "Positive" or "Negative" accordingly.
+coda_balance_coeff$PosNeg <- with(coda_balance_coeff, ifelse(Coefficient > 0, "Positive", "Negative"))
+# Assign Group Labels. The "Group" column is assigned labels "High" or "Low" based on the "PosNeg" column. If the coefficient is positive, it is labeled as "Low"; otherwise, it is labeled as "High".
+coda_balance_coeff$Group <- with(coda_balance_coeff, ifelse(PosNeg == "Positive", "Low", "High"))
+coda_balance_coeff
+```
+
+### 7. Create Data Frame with Samples, Predictions, and Variables. A data frame coda_balances_long_predictions is created to store balance predictions along with sex, group, and sample type information
+
+```{r}
+coda_balances_long_predictions <- data.frame(coda_glmnet_long$predictions)
+colnames(coda_balances_long_predictions) <- c("Balance")
+coda_balances_long_predictions$treatment <- factor(map_all$treatment)
+coda_balances_long_predictions$week <- factor(map_all$week)
+coda_balances_long_predictions
+
+
+
+```
+
+### 8. Create Plots. The first one is a boxplot and scatter plot of microbial balances based on treatment and week. The second one is a bar plot showing genera in the selected balance, filtered based on a coefficient threshold.
+# Graph Sample Balances and Species Coefficients (coeff > 0.099)
+
+```{r}
+# Species coefficient plot
+#plot only the genera that are at least 10% of the contribution to the balance
+coda_balance_coeff_10p <- coda_balance_coeff[(coda_balance_coeff$Coefficient >= 0.099 | coda_balance_coeff$Coefficient<= -0.099),]
+coda_balance_coeff_10p
+
+
+```
+
+
+```{r}
+####
+#### simplify taxa names using simplify_taxa-names_count-tables.R
+####
+
+
+p_sample_genera <- ggplot(
+  data = coda_balance_coeff_10p, 
+  aes(x = reorder(Genus, Coefficient), y = Coefficient)) +
+  geom_bar(stat="identity", width = 0.7, aes(color = Group, fill = Group), show.legend = FALSE) +
+  scale_color_manual(values = c("#332288", "#E066A6")) +
+  scale_fill_manual(values = c("#332288", "#E066A6")) +
+  theme_classic() +
+  labs(title = "Bacteria") +
+  xlab(" ") + ylab("Log-contrast Coefficient") +
+  theme(text = element_text(size = 15))  +
+  theme(plot.title = element_text(size=20, face = "bold",hjust = 0.5)) +
+  coord_flip() 
+p_sample_genera
+
+# Balance prediction plot
+p_control_sample_balances <- ggplot(data = coda_balances_long_predictions, aes(x = treatment, y = Balance, color = treatment)) +
+  geom_line() +
+  geom_boxplot() +
+  scale_color_manual(values = c("#332288", "#E066A6")) +
+  scale_fill_manual(values = c("#332288", "#E066A6")) +
+  theme_classic() +
+  labs(title = "",
+       color = "Group") +  # Change legend title
+  xlab(" ") + ylab("Balance Value") +
+  theme(text = element_text(size = 15))  +
+  theme(plot.title = element_text(size=16)) +
+  scale_x_discrete(labels = c("H" = "Half-cup", "T" = "Two-cup")) +
+  coord_flip() +
+  theme(legend.position = "none")
+
+p_control_sample_balances
+
+p_coda_bacteria <- egg::ggarrange(p_sample_genera, p_control_sample_balances, labels = c("", ""), 
+                                        ncol = 1, nrow = 2, heights = c(1,0.25))
+as_ggplot(p_coda_bacteria)
+
+```
+
+```{r}
+
+ggsave("fig3_coda_bacteria.png", plot = p_coda_bacteria, width = 12, height = 6, units = "in", dpi = 300)
+
+```
+
+```{r}
+
+
+
+
+species_sample_genera <- ggplot(
+  data = coda_balance_coeff_10p, 
+  aes(x = reorder(Species, Coefficient), y = Coefficient)) +
+  geom_bar(stat="identity", width = 0.7, aes(color = Group, fill = Group), show.legend = FALSE) +
+  scale_color_manual(values = c("#332288", "#E066A6")) +
+  scale_fill_manual(values = c("#332288", "#E066A6")) +
+  theme_classic() +
+  labs(title = "Bacteria") +
+  xlab(" ") + ylab("Log-contrast Coefficient") +
+  theme(text = element_text(size = 15))  +
+  theme(plot.title = element_text(size=20, face = "bold",hjust = 0.5)) +
+  coord_flip() 
+species_sample_genera
+
+# Balance prediction plot
+species_control_sample_balances <- ggplot(data = coda_balances_long_predictions, aes(x = treatment, y = Balance, color = treatment)) +
+  geom_line() +
+  geom_boxplot() +
+  scale_color_manual(values = c("#332288", "#E066A6")) +
+  scale_fill_manual(values = c("#332288", "#E066A6")) +
+  theme_classic() +
+  labs(title = "",
+       color = "Group") +  # Change legend title
+  xlab(" ") + ylab("Balance Value") +
+  theme(text = element_text(size = 15))  +
+  theme(plot.title = element_text(size=16)) +
+  scale_x_discrete(labels = c("H" = "Half-cup", "T" = "Two-cup")) +
+  coord_flip() +
+  theme(legend.position = "none")
+
+species_control_sample_balances
+
+species_coda_bacteria <- egg::ggarrange(species_sample_genera, species_control_sample_balances, labels = c("", ""), 
+                                        ncol = 1, nrow = 2, heights = c(1,0.25))
+as_ggplot(species_coda_bacteria)
+```
+
+
+
+
+Subset rows that only contain two cup samples
+
+```{r}
+
+x_species_ordered_twocup <- x_species_ordered[1:76, ]
+
+sub_map <- map_all[1:76, ]
+
+y_twocup <- factor(sub_map$week)
+
+
+```
+
+
+## Two cup condition only week 0 vs week 8
+
+```{r}
+set.seed(123)
+
+#coda_glmnet_twocup <- coda_glmnet(x_species_ordered ,y, x_time, subject_id, ini_time, end_time, lambda="lambda.min",nfolds=5)
+
+coda_glmnet_twocup <- coda_glmnet(x = x_species_ordered_twocup, y = y_twocup, lambda = "lambda.min", nvar = NULL, alpha = 0.9, nfolds = 7, showPlots = TRUE, coef_threshold = 0)
+
+
+
+
+```
+
+
+
+### 4. Extract Accuracy Measure. The apparent Area Under the Curve (AUC) is extracted as an accuracy measure from the regression results.
+
+```{r}
+coda_glmnet_twocup$taxa.num
+
+
+coda_glmnet_twocup$taxa.name
+
+
+coda_glmnet_twocup$`log-contrast coefficients`
+
+
+
+```
+
+
+
+
+
+```{r}
+
+coda_glmnet_twocup$`apparent AUC`
+coda_glmnet_twocup$`predictions plot`
+coda_glmnet_twocup$`signature plot`
+
+
+```
+
+
+
+
+
+
+### 5. Create a Data Frame with Genera and Coefficients. A data frame coda_balance_coeff_control_ocis created to store genera names and their corresponding coefficients from the regression
+```{r}
+
+coda_balance_coeff_twocup <- data.frame(cbind(coda_glmnet_twocup$`log-contrast coefficients`, coda_glmnet_twocup$taxa.name))
+# view(coda_balance_coeff)
+
+```
+
+
+### 6. Data Frame Manipulations
+
+```{r}
+# Set row names of the data frame coda_balance the taxa names obtained from the regression results
+rownames(coda_balance_coeff_twocup) <- coda_balance_coeff_twocup$taxa.name
+# Set column names of the data frame to "Coefficient_full" and "Species" for clarity.
+colnames(coda_balance_coeff_twocup) <- c("Coefficient_full", "Species")
+# Convert "Coefficient_full" column to numeric type, and create a new column "Coefficient" by rounding "Coefficient_full" to two decimal places
+coda_balance_coeff_twocup$Coefficient_full <- as.numeric(coda_balance_coeff_twocup$Coefficient_full)
+coda_balance_coeff_twocup$Coefficient <-as.numeric(format(round(coda_balance_coeff_twocup$Coefficient_full, 2), nsmall = 2))
+# Determine Positive or Negative Coefficients. Create "PosNeg" column based on whether the coefficient is positive or negative; contains the labels "Positive" or "Negative" accordingly.
+coda_balance_coeff_twocup$PosNeg <- with(coda_balance_coeff_twocup, ifelse(Coefficient > 0, "Positive", "Negative"))
+# Assign Group Labels. The "Group" column is assigned labels "High" or "Low" based on the "PosNeg" column. If the coefficient is positive, it is labeled as "Low"; otherwise, it is labeled as "High".
+coda_balance_coeff_twocup$Group <- with(coda_balance_coeff_twocup, ifelse(PosNeg == "Positive", "Low", "High"))
+coda_balance_coeff_twocup
+```
+
+### 7. Create Data Frame with Samples, Predictions, and Variables. A data frame coda_balances_long_predictions is created to store balance predictions along with sex, group, and sample type information
+
+```{r}
+coda_balances_predictions_twocup <- data.frame(coda_glmnet_twocup$predictions)
+colnames(coda_balances_predictions_twocup) <- c("Balance")
+coda_balances_predictions_twocup$week <- factor(sub_map$week)
+coda_balances_predictions_twocup
+
+
+
+```
+
+### 8. Create Plots. The first one is a boxplot and scatter plot of microbial balances based on treatment and week. The second one is a bar plot showing genera in the selected balance, filtered based on a coefficient threshold.
+# Graph Sample Balances and Species Coefficients (coeff > 0.099)
+
+```{r}
+# Species coefficient plot
+#plot only the genera that are at least 10% of the contribution to the balance
+coda_balance_coeff_10_twocup <- coda_balance_coeff_twocup[(coda_balance_coeff_twocup$Coefficient >= 0.099 | coda_balance_coeff_twocup$Coefficient<= -0.099),]
+coda_balance_coeff_10_twocup
+
+
+```
+
+
+```{r}
+####
+#### simplify taxa names using simplify_taxa-names_count-tables.R
+####
+
+#coda_balance_coeff_control_oc_10p[7,2] <- "Eisenbergiella"
+
+p_sample_genera_twocup <- ggplot(
+  data = coda_balance_coeff_10_twocup, 
+  aes(x = reorder(Genus, Coefficient), y = Coefficient)) +
+  geom_bar(stat="identity", width = 0.7, aes(color = Group, fill = Group), show.legend = FALSE) +
+  scale_color_manual(values = c("#EC172B", "#0DAFB5")) +
+  scale_fill_manual(values = c("#EC172B", "#0DAFB5")) +
+  theme_classic() +
+  labs(title = "Bacteria") +
+  xlab(" ") + ylab("Log-contrast Coefficient") +
+  theme(text = element_text(size = 15))  +
+  theme(plot.title = element_text(size=20, face = "bold",hjust = 0.5)) +
+  coord_flip() 
+p_sample_genera_twocup
+
+# Balance prediction plot
+p_control_sample_balances_twocup <- ggplot(data = coda_balances_predictions_twocup, aes(x = week, y = Balance, color = week)) +
+  geom_line() +
+  geom_boxplot() +
+  scale_color_manual(values = c("#EC172B", "#0DAFB5")) +
+  scale_fill_manual(values = c("#EC172B", "#0DAFB5")) +
+  theme_classic() +
+  labs(title = "",
+       color = "Group") +  # Change legend title
+  xlab(" ") + ylab("Balance Value") +
+  theme(text = element_text(size = 15))  +
+  theme(plot.title = element_text(size=16)) +
+  scale_x_discrete(labels = c("0" = "Week 0", "8" = "Week 8")) +
+  coord_flip() +
+  theme(legend.position = "none")
+
+p_control_sample_balances_twocup
+
+p_coda_bacteria_twocup <- egg::ggarrange(p_sample_genera_twocup, p_control_sample_balances_twocup, labels = c("", ""), 
+                                        ncol = 1, nrow = 2, heights = c(1,0.25))
+as_ggplot(p_coda_bacteria_twocup)
+
+```

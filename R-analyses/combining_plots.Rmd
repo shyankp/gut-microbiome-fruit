@@ -1,0 +1,343 @@
+---
+title: "Combining Plots"
+output: html_notebook
+---
+
+```{r}
+
+getwd()
+
+```
+
+```{r}
+library(cowplot)
+library(ggplot2)
+
+
+
+plot1 <- p_NMDS12_clr_treat + theme(aspect.ratio = 1.25, legend.position = "none")
+plot2 <- p_NMDS12_clr_fecalm_treat + theme(aspect.ratio = 1.25, legend.position = "none")
+plot3 <- p_NMDS12_clr_plasmam_treat + theme(aspect.ratio = 1.25, legend.position = "none")
+
+combined_plot <- plot_grid(plot1, plot2, plot3,
+          nrow = 1,
+          rel_widths = c(1, 1, 1))  # adjust based on content
+          #align = "v")
+
+combined_plot
+
+ggsave("fig2_NMDS_beta_diversity.png", plot = combined_plot, width = 12, height = 8, units = "in", dpi = 300)
+
+```
+```{r}
+
+plot1 <- p_NMDS12_clr_treat +
+  theme(aspect.ratio = 1.25, legend.position = "none")
+
+plot2 <- p_NMDS12_clr_fecalm_treat +
+  theme(aspect.ratio = 1.25, legend.position = "none")
+
+plot3 <- p_NMDS12_clr_plasmam_treat +
+  theme(aspect.ratio = 1.25, legend.position = "none")
+
+combined_plot <- plot_grid(
+  plot1, plot2, plot3,
+  ncol = 1,            # stack vertically
+  rel_heights = c(1, 1, 1)  # adjust if you want some plots taller
+)
+
+combined_plot
+
+ggsave(
+  "fig2_NMDS_beta_diversity_vertical.png",
+  plot = combined_plot,
+  width = 8, height = 12, units = "in", dpi = 300
+)
+
+ggsave("bacteria_NMDS_beta_diversity.png", plot = plot1, width = 6, height = 6, units = "in", dpi = 300)
+ggsave("fecal_m_NMDS_beta_diversity.png", plot = plot2, width = 6, height = 6, units = "in", dpi = 300)
+ggsave("plasma_m_NMDS_beta_diversity.png", plot = plot3, width = 6, height = 6, units = "in", dpi = 300)
+
+```
+
+
+```{r}
+
+plot1_week <- p_NMDS12_clr_treat_2 +
+  theme(aspect.ratio = 1.25)#, legend.position = "none")
+
+plot2_week <- p_NMDS12_clr_fecalm_treat_2 +
+  theme(aspect.ratio = 1.25, legend.position = "none")
+
+plot3_week <- p_NMDS12_clr_plasmam_treat_2 +
+  theme(aspect.ratio = 1.25, legend.position = "none")
+
+combined_plot_week <- plot_grid(
+  plot1_week, plot2_week, plot3_week,
+  ncol = 1,            # stack vertically
+  rel_heights = c(1, 1, 1)  # adjust if you want some plots taller
+)
+
+combined_plot_week
+
+ggsave(
+  "fig_NMDS_beta_diversity_vertical_WEEK.png",
+  plot = combined_plot_week,
+  width = 8, height = 12, units = "in", dpi = 300)
+
+```
+
+
+
+```{r}
+
+
+library(cowplot)
+
+plot1 <- p_NMDS12_clr_treat + theme(aspect.ratio = 1.25)
+plot2 <- p_NMDS12_clr_fecalm_treat + theme(aspect.ratio = 1.25)
+plot3 <- p_NMDS12_clr_plasmam_treat + theme(aspect.ratio = 1.25)
+
+combined_plot <- plot_grid(plot1, plot2, plot3,
+          nrow = 1,
+          rel_widths = c(1, 1, 1))  # adjust based on content
+          #align = "v")
+
+combined_plot
+
+
+ggsave("fig2_NMDS_beta_diversity_legend.png", plot = combined_plot, width = 1, height = 12, units = "in", dpi = 300)
+
+
+
+
+```
+
+
+
+
+```{r}
+
+vplot1 <- p_NMDS12_clr_treat + 
+  theme(aspect.ratio = 1.25,
+        text = element_text(size = 18))  # Adjust text size
+
+vplot2 <- p_NMDS12_clr_fecalm_treat + 
+  theme(aspect.ratio = 1.25,
+        text = element_text(size = 18))
+
+vplot3 <- p_NMDS12_clr_plasmam_treat + 
+  theme(aspect.ratio = 1.25,
+        text = element_text(size = 18))
+
+vcombined_plot <- plot_grid(vplot1, vplot2, vplot3,
+          nrow = 1,
+          rel_widths = c(1, 1, 1))  # adjust based on content
+          #align = "v")
+
+vcombined_plot
+
+```
+
+
+
+
+```{r}
+
+library(magick)
+library(rsvg)
+
+getwd()
+
+```
+
+
+
+```{r}
+
+library(rsvg)
+library(ggplot2)
+library(cowplot)
+
+# Convert SVG to PNG
+rsvg_png("Network Images/titles_version2/Half Cup Week 0 Bacteria Taxa.svg", "Half Cup Week 0 Bacteria Taxa.png")
+rsvg_png("Network Images/titles_version2/Half Cup Week 8 Bacteria Taxa.svg", "Half Cup Week 8 Bacteria Taxa.png")
+rsvg_png("Network Images/titles_version2/Two Cup Week 0 Bacteria Taxa.svg", "Two Cup Week 0 Bacteria Taxa.png")
+rsvg_png("Network Images/titles_version2/Two Cup Week 8 Bacteria Taxa.svg", "Two Cup Week 8 Bacteria Taxa.png")
+
+# Create labeled panels
+bac_hc_week0 <- ggdraw() + draw_image("Half Cup Week 0 Bacteria Taxa.png") +
+  draw_label("A", x = 0.02, y = 0.92, hjust = 0, vjust = 1, size = 20, fontface = "bold")
+
+bac_hc_week8 <- ggdraw() + draw_image("Half Cup Week 8 Bacteria Taxa.png") +
+  draw_label("B", x = 0.02, y = 0.92, hjust = 0, vjust = 1, size = 20, fontface = "bold")
+
+bac_tc_week0 <- ggdraw() + draw_image("Two Cup Week 0 Bacteria Taxa.png") +
+  draw_label("C", x = 0.02, y = 0.92, hjust = 0, vjust = 1, size = 20, fontface = "bold")
+
+bac_tc_week8 <- ggdraw() + draw_image("Two Cup Week 8 Bacteria Taxa.png") +
+  draw_label("D", x = 0.02, y = 0.92, hjust = 0, vjust = 1, size = 20, fontface = "bold")
+
+# Arrange in a 2x2 grid
+bac_combined <- plot_grid(bac_hc_week0, bac_hc_week8, bac_tc_week0, bac_tc_week8, ncol = 2)
+
+# Add a title
+
+bacteria_title <- ggdraw() + 
+  draw_label("Half Cup vs. Two Cup Bacteria Correlation Networks",
+    fontface = "bold",
+    size = 22,
+    x = 0.5, 
+    hjust = 0.5)
+
+bac_fm_combine_titled <- plot_grid(bacteria_title, 
+  bac_combined,
+  ncol = 1,
+  rel_heights = c(0.1, 1))
+
+# Save
+ggsave("Network Images/titles_version2/within_bacteria_network.png", bac_fm_combine_titled, width = 12, height = 12, dpi = 300)
+
+
+
+```
+
+
+```{r}
+
+library(rsvg)
+library(ggplot2)
+library(cowplot)
+
+
+# Bacteria / Fecal Metabolite Network 
+# Convert SVG to PNG in memory
+rsvg_png("Network Images/no_titles_version2/Bacteria Fecal Metabolite Correlation Network - Half Cup.svg", file = "Bacteria Fecal Metabolite Correlation Network - Half Cup.png")
+rsvg_png("Network Images/no_titles_version2/Bacteria Fecal Metabolite Correlation Network - Two Cup.svg", file = "Bacteria Fecal Metabolite Correlation Network - Two Cup.png")
+
+# Load into cowplot
+bac_fm_halfcup <- ggdraw() + draw_image("Bacteria Fecal Metabolite Correlation Network - Half Cup.png") +
+  draw_label("A", x = 0.01, y = 0.98, hjust = 0, vjust = 1, size = 20, fontface = "bold")
+bac_fm_twocup <- ggdraw() + draw_image("Bacteria Fecal Metabolite Correlation Network - Two Cup.png") +
+  draw_label("B", x = 0.01, y = 0.98, hjust = 0, vjust = 1, size = 20, fontface = "bold")
+
+
+# Add a title
+
+fecal_title <- ggdraw() + 
+  draw_label("Half Cup vs. Two Cup Bacteria Fecal Metabolite Correlation Networks",
+    fontface = "bold",
+    size = 22,
+    x = 0.5, 
+    hjust = 0.5)
+
+
+# Combine side by side
+bac_fm_combine <- plot_grid(bac_fm_halfcup, bac_fm_twocup, ncol = 2)
+
+
+
+bac_fm_combine_titled <- plot_grid(fecal_title, 
+  bac_fm_combine,
+  ncol = 1,
+  rel_heights = c(0.1, 1))
+
+
+ggsave("Network Images/no_titles_version2/bac_fm_combine.png", bac_fm_combine_titled, width = 12, height = 6, dpi = 300)
+
+
+
+```
+
+
+
+```{r}
+
+# Bacteria / Plasma Metabolite Network 
+# Convert SVG to PNG in memory
+rsvg_png("Network Images/no_titles_version2/Bacteria Plasma Metabolite Correlation Network - Half Cup.svg", file = "Bacteria Plasma Metabolite Correlation Network - Half Cup.png")
+rsvg_png("Network Images/no_titles_version2/Bacteria Plasma Metabolite Correlation Network - Two Cup.svg", file = "Bacteria Plasma Metabolite Correlation Network - Two Cup.png")
+
+# Load into cowplot
+bac_pm_halfcup <- ggdraw() + draw_image("Bacteria Plasma Metabolite Correlation Network - Half Cup.png") +
+  draw_label("A", x = 0.01, y = 0.98, hjust = 0, vjust = 1, size = 20, fontface = "bold")
+bac_pm_twocup <- ggdraw() + draw_image("Bacteria Plasma Metabolite Correlation Network - Two Cup.png") +
+  draw_label("B", x = 0.01, y = 0.98, hjust = 0, vjust = 1, size = 20, fontface = "bold")
+
+# Add a title
+
+plasma_title <- ggdraw() + 
+  draw_label("Half Cup vs. Two Cup Bacteria Plasma Metabolite Correlation Networks",
+    fontface = "bold",
+    size = 22,
+    x = 0.5, 
+    hjust = 0.5)
+
+# Combine side by side
+bac_pm_combine <- plot_grid(bac_pm_halfcup, bac_pm_twocup, ncol = 2)
+
+
+bac_pm_combine_titled <- plot_grid(plasma_title, 
+  bac_pm_combine,
+  ncol = 1,
+  rel_heights = c(0.1, 1))
+
+
+ggsave("Network Images/no_titles_version2/bac_pm_combine.png", bac_pm_combine_titled, width = 12, height = 6, dpi = 300)
+
+```
+
+Putting bacteria plasma metabolite boxplots on one figure
+
+
+```{r}
+
+# Bacteria / Plasma Metabolite Network Boxplots
+
+# Load into cowplot
+bac_pm_avg_degree <- ggdraw() + draw_image("Network Images/boxplots/Bacteria Plasma Metabolite Network_Average Degree Centrality_boxplot.png") +
+  draw_label("A", x = 0.4, y = 0.95, hjust = 0, vjust = 1, size = 10, fontface = "bold")
+bac_pm_density <- ggdraw() + draw_image("Network Images/boxplots/Bacteria Plasma Metabolite Network_Density_boxplot.png") +
+  draw_label("B", x = 0.4, y = 0.95, hjust = 0, vjust = 1, size = 10, fontface = "bold")
+bac_pm_avg_edges <- ggdraw() + draw_image("Network Images/boxplots/Bacteria Plasma Metabolite Network_Number of Edges_boxplot.png") +
+  draw_label("C", x = 0.4, y = 0.95, hjust = 0, vjust = 1, size = 10, fontface = "bold")
+
+# Combine side by side
+bac_pm_combine_boxplots <- plot_grid(bac_pm_avg_degree, bac_pm_density, bac_pm_avg_edges, ncol = 1)
+
+bac_pm_combine_boxplots
+ggsave("Network Images/boxplots/bac_pm_combined_boxplots.png", bac_pm_combine_boxplots, width = 16, height = 12, dpi = 300)
+
+
+
+
+
+
+
+```
+
+
+
+```{r}
+bac_pm_combine_boxplots <- plot_grid(
+  ggdraw() + draw_image("Network Images/boxplots/Bacteria Plasma Metabolite Network_Average Degree Centrality_boxplot.png"),
+  ggdraw() + draw_image("Network Images/boxplots/Bacteria Plasma Metabolite Network_Density_boxplot.png"),
+  ggdraw() + draw_image("Network Images/boxplots/Bacteria Plasma Metabolite Network_Number of Edges_boxplot.png"),
+  ncol = 1,
+  labels = c("A", "B", "C"),
+  label_size = 15,
+  label_fontface = "bold",
+  label_x = 0.2, label_y = 0.98
+)
+
+# Save
+ggsave("Network Images/boxplots/bac_pm_combined_boxplots.png",
+       bac_pm_combine_boxplots, width = 8, height = 12, dpi = 300)
+
+
+
+
+
+
+
+```
